@@ -36,7 +36,6 @@ import pprint
 import socket
 import sys
 import time
-import types
 import traceback
 
 try:
@@ -583,7 +582,7 @@ class Plugin(object):
     def setState(self, state):
         if isinstance(state, int):
             self._lastEventId = state
-        elif isinstance(state, types.TupleType):
+        elif isinstance(state, tuple):
             self._lastEventId, self._backlog = state
         else:
             raise ValueError('Unknown state type: %s.' % type(state))
@@ -666,7 +665,7 @@ class Plugin(object):
             return
 
         regFunc = getattr(plugin, 'registerCallbacks', None)
-        if isinstance(regFunc, types.FunctionType):
+        if callable(regFunc):
             try:
                 regFunc(Registrar(self))
             except:
@@ -782,7 +781,7 @@ class Callback(object):
         @type shotgun: L{sg.Shotgun}
         @param logger: An object to log messages with.
         @type logger: I{logging.Logger}
-        @param matchEvents: The event filter to match events against befor invoking callback.
+        @param matchEvents: The event filter to match events against before invoking callback.
         @type matchEvents: dict
         @param args: Any datastructure you would like to be passed to your
             callback function. Defaults to None.
@@ -956,7 +955,7 @@ def _getConfigPath():
             return path
 
     # No config file was found
-    raise EventDaemonError('Config path not found!')
+    raise EventDaemonError('Config path not found, searched %s' % ', '.join(paths))
 
 
 if __name__ == '__main__':
