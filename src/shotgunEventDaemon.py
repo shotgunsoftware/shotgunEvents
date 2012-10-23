@@ -394,7 +394,7 @@ class Engine(daemonizer.Daemon):
             # Reload plugins
             for collection in self._pluginCollections:
                 collection.load()
-                
+
             # Make sure that newly loaded events have proper state.
             self._loadEventIdData()
 
@@ -419,7 +419,7 @@ class Engine(daemonizer.Daemon):
             filters = [['id', 'greater_than', nextEventId - 1]]
             fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid']
             order = [{'column':'id', 'direction':'asc'}]
-    
+
             conn_attempts = 0
             while True:
                 try:
@@ -908,6 +908,41 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
             return subject + ' ' + self.LEVEL_SUBJECTS[record.levelno]
         return subject
 
+    def emit(self, record):
+        """
+        Emit a record.
+        Format the record and send it to the specified addressees.
+        This version of the emit method provides support for tls/ssl which many
+        mail providers now require.
+        """
+        try:
+            import smtplib
+            import string # for tls add this line
+            try:
+                from email.utils import formatdate
+            except ImportError:
+                formatdate = self.date_time
+            port = self.mailport
+            if not port:
+                port = smtplib.SMTP_PORT
+            smtp = smtplib.SMTP(self.mailhost, port)
+            msg = self.format(record)
+            msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s" % (
+                            self.fromaddr,
+                            string.join(self.toaddrs, ","),
+                            self.getSubject(record),
+                            formatdate(), msg)
+            if self.username:
+                smtp.ehlo() # for tls add this line
+                smtp.starttls() # for tls add this line
+                smtp.ehlo() # for tls add this line
+                smtp.login(self.username, self.password)
+            smtp.sendmail(self.fromaddr, self.toaddrs, msg)
+            smtp.quit()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except:
+            self.handleError(record)
 
 class EventDaemonError(Exception):
     pass
