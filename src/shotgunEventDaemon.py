@@ -36,7 +36,10 @@ import pprint
 import socket
 import sys
 import time
+import types
 import traceback
+
+from distutils.version import StrictVersion
 
 try:
     import cPickle as pickle
@@ -47,10 +50,23 @@ import daemonizer
 import shotgun_api3 as sg
 
 
-EMAIL_FORMAT_STRING = """Time: %(asctime)s
+CURRENT_PYTHON_VERSION = StrictVersion(sys.version.split()[0])
+PYTHON_25 = StrictVersion('2.5')
+PYTHON_26 = StrictVersion('2.6')
+PYTHON_27 = StrictVersion('2.7')
+
+if CURRENT_PYTHON_VERSION > PYTHON_25:
+    EMAIL_FORMAT_STRING = """Time: %(asctime)s
 Logger: %(name)s
 Path: %(pathname)s
 Function: %(funcName)s
+Line: %(lineno)d
+
+%(message)s"""
+else:
+    EMAIL_FORMAT_STRING = """Time: %(asctime)s
+Logger: %(name)s
+Path: %(pathname)s
 Line: %(lineno)d
 
 %(message)s"""
@@ -83,7 +99,7 @@ def _removeHandlersFromLogger(logger, handlerTypes=None):
             logger.removeHandler(handler)
 
 
-def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username=None, password=None):
+def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username=None, password=None, secure=None):
     """
     Configure a logger with a handler that sends emails to specified
     addresses.
@@ -99,11 +115,7 @@ def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject,
         SMTPHandler.
     """
     if smtpServer and fromAddr and toAddrs and emailSubject:
-        if username and password:
-            mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject, (username, password))
-        else:
-            mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject)
-
+        mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject, (username, password), secure)
         mailHandler.setLevel(logging.ERROR)
         mailFormatter = logging.Formatter(EMAIL_FORMAT_STRING)
         mailHandler.setFormatter(mailFormatter)
@@ -137,6 +149,9 @@ class Config(ConfigParser.ConfigParser):
     def getSMTPServer(self):
         return self.get('emails', 'server')
 
+    def getSMTPPort(self):
+        return self.getint('emails', 'port')
+
     def getFromAddr(self):
         return self.get('emails', 'from')
 
@@ -154,6 +169,11 @@ class Config(ConfigParser.ConfigParser):
     def getEmailPassword(self):
         if self.has_option('emails', 'password'):
             return self.get('emails', 'password')
+        return None
+
+    def getSecureSMTP(self):
+        if self.has_option('emails', 'useTLS'):
+            return self.getboolean('emails', 'useTLS') or None
         return None
 
     def getLogMode(self):
@@ -255,10 +275,12 @@ class Engine(daemonizer.Daemon):
             return
 
         smtpServer = self.config.getSMTPServer()
+        smtpPort = self.config.getSMTPPort()
         fromAddr = self.config.getFromAddr()
         emailSubject = self.config.getEmailSubject()
         username = self.config.getEmailUsername()
         password = self.config.getEmailPassword()
+        secure = [None, (None, None)][self.config.getSecureSMTP()]
 
         if emails is True:
             toAddrs = self.config.getToAddrs()
@@ -268,7 +290,7 @@ class Engine(daemonizer.Daemon):
             msg = 'Argument emails should be True to use the default addresses, False to not send any emails or a list of recipient addresses. Got %s.'
             raise ValueError(msg % type(emails))
 
-        _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username, password)
+        _addMailHandlerToLogger(logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure)
 
     def _run(self):
         """
@@ -902,11 +924,76 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
         logging.CRITICAL: 'CRITICAL - Shotgun event daemon.',
     }
 
+    def __init__(self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None):
+        args = [smtpServer, fromAddr, toAddrs, emailSubject]
+        if credentials:
+            # Python 2.6 implemented the credentials argument
+            if CURRENT_PYTHON_VERSION >= PYTHON_26:
+                args.append(credentials)
+            else:
+                if isinstance(credentials, tuple):
+                    self.username, self.password = credentials
+                else:
+                    self.username = None
+
+            # Python 2.7 implemented the secure argument
+            if CURRENT_PYTHON_VERSION >= PYTHON_27:
+                args.append(secure)
+            else:
+                self.secure = secure
+
+        logging.handlers.SMTPHandler.__init__(self, *args)
+
     def getSubject(self, record):
         subject = logging.handlers.SMTPHandler.getSubject(self, record)
         if record.levelno in self.LEVEL_SUBJECTS:
             return subject + ' ' + self.LEVEL_SUBJECTS[record.levelno]
         return subject
+
+    def emit(self, record):
+        """
+        Emit a record.
+
+        Format the record and send it to the specified addressees.
+        """
+        # If the socket timeout isn't None, in Python 2.4 the socket read
+        # following enabling starttls() will hang. The default timeout will
+        # be reset to 60 later in 2 locations because Python 2.4 doesn't support
+        # except and finally in the same try block.
+        if CURRENT_PYTHON_VERSION >= PYTHON_25:
+            socket.setdefaulttimeout(None)
+
+        # Mostly copied from Python 2.7 implementation.
+        # Using email.Utils instead of email.utils for 2.4 compat.
+        try:
+            import smtplib
+            from email.Utils import formatdate
+            port = self.mailport
+            if not port:
+                port = smtplib.SMTP_PORT
+            smtp = smtplib.SMTP()
+            smtp.connect(self.mailhost, port)
+            msg = self.format(record)
+            msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s" % (
+                            self.fromaddr,
+                            ",".join(self.toaddrs),
+                            self.getSubject(record),
+                            formatdate(), msg)
+            if self.username:
+                if self.secure is not None:
+                    smtp.ehlo()
+                    smtp.starttls(*self.secure)
+                    smtp.ehlo()
+                smtp.login(self.username, self.password)
+            smtp.sendmail(self.fromaddr, self.toaddrs, msg)
+            smtp.close()
+        except (KeyboardInterrupt, SystemExit):
+            socket.setdefaulttimeout(60)
+            raise
+        except:
+            self.handleError(record)
+
+        socket.setdefaulttimeout(60)
 
 
 class EventDaemonError(Exception):
