@@ -150,7 +150,9 @@ class Config(ConfigParser.ConfigParser):
         return self.get('emails', 'server')
 
     def getSMTPPort(self):
-        return self.getint('emails', 'port')
+        if self.has_option('emails', 'port'):
+            return self.getint('emails', 'port')
+        return 25
 
     def getFromAddr(self):
         return self.get('emails', 'from')
