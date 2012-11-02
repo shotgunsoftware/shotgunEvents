@@ -175,8 +175,8 @@ class Config(ConfigParser.ConfigParser):
 
     def getSecureSMTP(self):
         if self.has_option('emails', 'useTLS'):
-            return self.getboolean('emails', 'useTLS') or None
-        return None
+            return self.getboolean('emails', 'useTLS') or False
+        return False
 
     def getLogMode(self):
         return self.getint('daemon', 'logMode')
@@ -282,7 +282,10 @@ class Engine(daemonizer.Daemon):
         emailSubject = self.config.getEmailSubject()
         username = self.config.getEmailUsername()
         password = self.config.getEmailPassword()
-        secure = [None, (None, None)][self.config.getSecureSMTP()]
+        if self.config.getSecureSMTP():
+            secure = (None, None)
+        else:
+            secure = None
 
         if emails is True:
             toAddrs = self.config.getToAddrs()
