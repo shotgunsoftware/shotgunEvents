@@ -147,7 +147,9 @@ class Config(ConfigParser.ConfigParser):
         return [s.strip() for s in self.get('plugins', 'paths').split(',')]
 
     def getSMTPServer(self):
-        return self.get('emails', 'server')
+        if self.has_option('emails', 'server'):
+            return self.get('emails', 'server')
+        return None
 
     def getSMTPPort(self):
         if self.has_option('emails', 'port'):
