@@ -416,6 +416,7 @@ class Engine(daemonizer.Daemon):
         while self._continue:
             # Process events
             for event in self._getNewEvents():
+                self.log.debug( "Processing %s", event['id'] )
                 for collection in self._pluginCollections:
                     collection.process(event)
                 self._saveEventIdData()
@@ -454,6 +455,7 @@ class Engine(daemonizer.Daemon):
             conn_attempts = 0
             while True:
                 try:
+                    self.log.debug("Checking events from %d", nextEventId )
                     return self._sg.find("EventLogEntry", filters, fields, order, limit=self.config.getMaxEventBatchSize())
                     if events:
                         self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
@@ -545,6 +547,7 @@ class PluginCollection(object):
     def process(self, event):
         for plugin in self:
             if plugin.isActive():
+                plugin.logger.debug( "Checking event %d", event['id'])
                 plugin.process(event)
             else:
                 plugin.logger.debug('Skipping: inactive.')
@@ -722,6 +725,7 @@ class Plugin(object):
         self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args))
 
     def process(self, event):
+        self.logger.debug( "Processing %s", event['id'] )
         if event['id'] in self._backlog:
             if self._process(event):
                 self.logger.info('Processed id %d from backlog.' % event['id'])
@@ -882,6 +886,7 @@ class Callback(object):
         else:
             eventType = event['event_type']
             if eventType not in self._matchEvents:
+                self._logger.debug('Rejecting %s not in %s', eventType, self._matchEvents)
                 return False
 
         attributes = self._matchEvents[eventType]
@@ -891,7 +896,7 @@ class Callback(object):
 
         if event['attribute_name'] and event['attribute_name'] in attributes:
             return True
-
+        self._logger.debug('Rejecting %s not in %s', event['attribute_name'], attributes )
         return False
 
     def process(self, event):
