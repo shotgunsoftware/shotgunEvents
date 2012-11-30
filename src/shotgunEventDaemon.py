@@ -279,6 +279,8 @@ class Engine(daemonizer.Daemon):
             return
 
         smtpServer = self.config.getSMTPServer()
+        if not smtpServer:
+            return
         smtpPort = self.config.getSMTPPort()
         fromAddr = self.config.getFromAddr()
         emailSubject = self.config.getEmailSubject()
@@ -547,7 +549,7 @@ class PluginCollection(object):
             else:
                 plugin.logger.debug('Skipping: inactive.')
 
-    def load(self):
+    def load(self, configPath=None ):
         """
         Load plugins from disk.
 
@@ -593,7 +595,7 @@ class Plugin(object):
         """
         self._engine = engine
         self._path = path
-
+        self._configPath = _getConfigPath()
         if not os.path.isfile(path):
             raise ValueError('The path to the plugin is not a valid file - %s.' % path)
 
@@ -661,7 +663,7 @@ class Plugin(object):
         """
         self._engine.setEmailsOnLogger(self.logger, emails)
 
-    def load(self):
+    def load(self ):
         """
         Load/Reload the plugin and all its callbacks.
 
@@ -703,7 +705,7 @@ class Plugin(object):
         regFunc = getattr(plugin, 'registerCallbacks', None)
         if callable(regFunc):
             try:
-                regFunc(Registrar(self))
+                regFunc(Registrar(self, configPath = self._configPath ))
             except:
                 self._engine.log.critical('Error running register callback function from plugin at %s.\n\n%s', self._path, traceback.format_exc())
                 self._active = False
@@ -779,12 +781,13 @@ class Registrar(object):
     """
     See public API docs in docs folder.
     """
-    def __init__(self, plugin):
+    def __init__(self, plugin, configPath=None):
         """
         Wrap a plugin so it can be passed to a user.
         """
         self._plugin = plugin
         self._allowed = ['logger', 'setEmails', 'registerCallback']
+        self._configPath = configPath # Give the plugin the opportunity to read values from the config file
 
     def getLogger(self):
         """
@@ -796,6 +799,26 @@ class Registrar(object):
         # TODO: Fix this ugly protected member access
         return self.logger
 
+    def getConfig( self ):
+        """
+        Return a config parser for this plugin
+        @return: A config parser for this plugin or None
+        @rtype: L{ConfigParser.ConfigParser}
+        """
+        if self._configPath :
+            cfg = ConfigParser.ConfigParser()
+            cfg.read( self._configPath)
+            return cfg
+        return None
+
+    def getName( self ) :
+        """
+        Return the name of this plugin
+        @return: The name of this plugin
+        @rtype: I{str}
+        """
+        return self._plugin.getName()
+    
     def __getattr__(self, name):
         if name in self._allowed:
             return getattr(self._plugin, name)
