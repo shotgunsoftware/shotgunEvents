@@ -4,7 +4,7 @@ For detailed information please see
 http://shotgunsoftware.github.com/shotgunEvents/api.html
 """
 import logging
-
+import os
 
 def registerCallbacks(reg):
     """Register all necessary or appropriate callbacks for this plugin."""
@@ -54,6 +54,30 @@ def registerCallbacks(reg):
     # messages through but block info and lower. This is particularly usefull
     # for enabling and disabling debugging on a per plugin basis.
     #reg.logger.setLevel(logging.ERROR)
+
+def _loadPlugin( engine, path ) :
+	"""
+		Load the given plugin in the given Engine
+		@param engine : The engine to load the plugin into
+		@param path : Full path to the plugin Python script
+	"""
+	# Check that everything looks right
+	if not os.path.isfile(path) :
+		raise ValueError( "%s is not a valid file path" % path )
+	( dir, file ) = os.path.split( path )
+	# Check if we already have a plugin collection covering the directory path
+	for pc in engine._pluginCollections :
+		if pc._path == dir :
+			break
+	else :
+		# Need to create a new plugin collection
+		engine._pluginCollections.append( PluginCollection(engine, dir) )
+		pc = engine._pluginCollections[-1]
+
+	if file not in pc._plugins : # Plugin is not already loaded
+		pc[file] = Plugin(pc._engine, os.path.join(dir, file))
+		pc[file].load()
+	return pc[file]
 
 
 def logArgs(sg, logger, event, args):
