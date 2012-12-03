@@ -47,9 +47,11 @@ def registerCallbacks(reg):
     eventFilter = {}
     for e in events :
         eventFilter[ e % settings['sgEntity'] ] = ['sg_status_list', 'retirement_date' ] # retirement_date
-    reg.logger.debug( "Registered %s" % eventFilter)
+    reg.logger.debug( "Registering %s" % eventFilter)
     reg.registerCallback( settings['script_name'], settings['script_key'], logArgs, eventFilter, settings )
 
+	# Get a list of all the existing plugins from Shotgun
+	#plugins = sg.find( settings['sgEntity'], [], [] )
     # Set the logging level for this particular plugin. Let error and above
     # messages through but block info and lower. This is particularly usefull
     # for enabling and disabling debugging on a per plugin basis.
