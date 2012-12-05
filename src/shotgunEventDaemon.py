@@ -815,6 +815,13 @@ class Registrar(object):
             return cfg
         return None
 
+    def getEngine( self ) :
+        """
+        Return the engine for this plugin
+        @return : The engine for this plugin
+        @rtype : L{Engine}
+        """
+        return self._plugin._engine
     def getName( self ) :
         """
         Return the name of this plugin
