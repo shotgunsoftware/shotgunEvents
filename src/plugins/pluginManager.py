@@ -74,15 +74,7 @@ def _loadPlugin( engine, path ) :
     if not os.path.isfile(path) :
         raise ValueError( "%s is not a valid file path" % path )
     ( dir, file ) = os.path.split( path )
-    # Check if we already have a plugin collection covering the directory path
-    for pc in engine._pluginCollections :
-        if pc.path == dir :
-            break
-    else :
-        # Need to create a new plugin collection
-        engine._pluginCollections.append( PluginCollection(engine, dir) )
-        pc = engine._pluginCollections[-1]
-
+    pc = engine.getCollectionForPath( dir )
     if file not in pc._plugins : # Plugin is not already loaded
         pc[file] = Plugin(pc._engine, os.path.join(dir, file))
         pc[file].load()

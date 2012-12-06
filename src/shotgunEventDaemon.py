@@ -301,6 +301,22 @@ class Engine(daemonizer.Daemon):
 
         _addMailHandlerToLogger(logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure)
 
+    def getCollectionForPath( self, path ) :
+        """
+        Return a plugin collection to handle the given path
+        @param path : The path to return a collection for
+        @return: A collection that will handle the path.
+        @rtype: L{PluginCollection}		 
+        """
+        # Check if we already have a plugin collection covering the directory path
+        for pc in self._pluginCollections :
+            if pc.path == path :
+                return pc
+        else :
+            # Need to create a new plugin collection
+            self._pluginCollections.append( PluginCollection(self, path) )
+            return self._pluginCollections[-1]
+
     def _run(self):
         """
         Start the processing of events.
