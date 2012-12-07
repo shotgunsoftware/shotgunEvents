@@ -6,7 +6,7 @@ http://shotgunsoftware.github.com/shotgunEvents/api.html
 import logging
 import os
 import shotgun_api3 as sg
-
+import re
 def registerCallbacks(reg):
     """Register all necessary or appropriate callbacks for this plugin."""
 
@@ -49,7 +49,7 @@ def registerCallbacks(reg):
     for e in events :
         eventFilter[ e % settings['sgEntity'] ] = ['sg_status_list', 'retirement_date' ] # retirement_date
     reg.logger.debug( "Registering %s" % eventFilter)
-    reg.registerCallback( settings['script_name'], settings['script_key'], logArgs, eventFilter, settings )
+    reg.registerCallback( settings['script_name'], settings['script_key'], pluginEventCB, eventFilter, settings )
 
     # Get a list of all the existing plugins from Shotgun
     sgHandle = sg.Shotgun( reg.getEngine().config.getShotgunURL(), settings['script_name'], settings['script_key'] )
@@ -79,7 +79,7 @@ def loadPlugin( engine, path ) :
     return p
 
 
-def logArgs(sg, logger, event, args):
+def pluginEventCB(sg, logger, event, args):
     """
     A callback that logs its arguments.
 
@@ -88,4 +88,20 @@ def logArgs(sg, logger, event, args):
     @param event: A Shotgun event.
     @param args: The args passed in at the registerCallback call.
     """
-    logger.info("%s" % str(event))
+    logger.debug("%s" % str(event))
+    etype = event['event_type']
+    attribute = event['attribute_name']
+    entity = event['entity']
+    if re.search( 'Change$', etype ) :
+        if attribute == 'sg_status_list' :
+            logger.info( "Status changed for %s", entity['name'] )
+            # We need some details to know what to do
+            p = sg.find_one( entity['type'], [[ 'id', 'is', entity['id']]], ['sg_script_path'] )
+            if p['sg_script_path'] and p['sg_script_path']['local_path'] :
+                if event['meta']['new_value'] == 'act' :
+                    logger.info('Loading %s', p['sg_script_path']['name'])
+                else : #Disable the plugin
+                    logger.info('Unloading %s', p['sg_script_path']['name'])
+        
+
+
