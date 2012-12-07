@@ -58,13 +58,13 @@ def registerCallbacks(reg):
     for p in plugins :
         if p['sg_script_path'] and p['sg_script_path']['local_path'] :
             reg.logger.info( "Loading %s", p['sg_script_path']['name'] )
-            _loadPlugin( reg.getEngine(), p['sg_script_path'] and p['sg_script_path']['local_path'])
+            loadPlugin( reg.getEngine(), p['sg_script_path']['local_path'])
     # Set the logging level for this particular plugin. Let error and above
     # messages through but block info and lower. This is particularly usefull
     # for enabling and disabling debugging on a per plugin basis.
     #reg.logger.setLevel(logging.ERROR)
 
-def _loadPlugin( engine, path ) :
+def loadPlugin( engine, path ) :
     """
         Load the given plugin in the given Engine
         @param engine : The engine to load the plugin into
@@ -75,10 +75,8 @@ def _loadPlugin( engine, path ) :
         raise ValueError( "%s is not a valid file path" % path )
     ( dir, file ) = os.path.split( path )
     pc = engine.getCollectionForPath( dir, autoDiscover=False )
-    if file not in pc._plugins : # Plugin is not already loaded
-        pc[file] = Plugin(pc._engine, os.path.join(dir, file))
-        pc[file].load()
-    return pc[file]
+    p = pc.getPlugin( file )
+    return p
 
 
 def logArgs(sg, logger, event, args):

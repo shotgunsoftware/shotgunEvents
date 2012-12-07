@@ -598,6 +598,18 @@ class PluginCollection(object):
 		#TODO : report something when plugins are gone missing
         self._plugins = newPlugins
 
+    def getPlugin( self, file ) :
+        """
+        Ensure a particular plugin is loaded in this collection
+        @param file : short name of the plugin to load in this collection
+        @type file : I{str}
+        @rtype : L{Plugin}
+        """
+        if file not in self._plugins : # Plugin is not already loaded
+            self._plugins[file] = Plugin( self._engine, os.path.join( self.path, file))
+            self._plugins[file].load()
+        return self._plugins[file]
+    
     def __iter__(self):
         for basename in sorted(self._plugins.keys()):
             yield self._plugins[basename]
