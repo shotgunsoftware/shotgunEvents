@@ -53,10 +53,10 @@ def registerCallbacks(reg):
 
     # Get a list of all the existing plugins from Shotgun
     sgHandle = sg.Shotgun( reg.getEngine().config.getShotgunURL(), settings['script_name'], settings['script_key'] )
-    plugins = sgHandle.find( settings['sgEntity'], [], ['sg_script_path'] )
+    plugins = sgHandle.find( settings['sgEntity'], [], ['sg_script_path', 'sg_status_list'] )
     reg.logger.debug( "Plugins : %s", plugins )
     for p in plugins :
-        if p['sg_script_path'] and p['sg_script_path']['local_path'] :
+        if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act' :
             reg.logger.info( "Loading %s", p['sg_script_path']['name'] )
             loadPlugin( reg.getEngine(), p['sg_script_path']['local_path'])
     # Set the logging level for this particular plugin. Let error and above
