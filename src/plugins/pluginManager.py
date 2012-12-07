@@ -74,7 +74,7 @@ def _loadPlugin( engine, path ) :
     if not os.path.isfile(path) :
         raise ValueError( "%s is not a valid file path" % path )
     ( dir, file ) = os.path.split( path )
-    pc = engine.getCollectionForPath( dir )
+    pc = engine.getCollectionForPath( dir, autoDiscover=False )
     if file not in pc._plugins : # Plugin is not already loaded
         pc[file] = Plugin(pc._engine, os.path.join(dir, file))
         pc[file].load()

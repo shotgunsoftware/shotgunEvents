@@ -301,7 +301,7 @@ class Engine(daemonizer.Daemon):
 
         _addMailHandlerToLogger(logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure)
 
-    def getCollectionForPath( self, path ) :
+    def getCollectionForPath( self, path, autoDiscover=True ) :
         """
         Return a plugin collection to handle the given path
         @param path : The path to return a collection for
@@ -315,7 +315,9 @@ class Engine(daemonizer.Daemon):
         else :
             # Need to create a new plugin collection
             self._pluginCollections.append( PluginCollection(self, path) )
-            return self._pluginCollections[-1]
+            pc = self._pluginCollections[-1]
+            pc._autoDiscover = autoDiscover
+            return pc
 
     def _run(self):
         """
@@ -529,6 +531,7 @@ class PluginCollection(object):
 
         self._engine = engine
         self.path = path
+        self._autoDiscover = True # Wether or not new plugins should automatically be discovered and loaded
         self._plugins = {}
         self._stateData = {}
 
@@ -586,11 +589,13 @@ class PluginCollection(object):
 
             if basename in self._plugins:
                 newPlugins[basename] = self._plugins[basename]
-            else:
+            elif self._autoDiscover :
                 newPlugins[basename] = Plugin(self._engine, os.path.join(self.path, basename))
 
-            newPlugins[basename].load()
+            if basename in newPlugins :
+                newPlugins[basename].load()
 
+		#TODO : report something when plugins are gone missing
         self._plugins = newPlugins
 
     def __iter__(self):
