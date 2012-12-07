@@ -43,6 +43,7 @@ def registerCallbacks(reg):
     for k in keys :
         settings[k] = cfg.get( my_name, k )
         reg.logger.debug( "Using %s %s" % ( k, settings[k] ) )
+    settings['engine'] = reg.getEngine()
     # Register all callbacks related to our custom entity
     events = [ r'Shotgun_%s_New', r'Shotgun_%s_Change', r'Shotgun_%s_New', r'Shotgun_%s_Retirement', r'Shotgun_%s_Revival']
     eventFilter = {}
@@ -100,6 +101,7 @@ def pluginEventCB(sg, logger, event, args):
             if p['sg_script_path'] and p['sg_script_path']['local_path'] :
                 if event['meta']['new_value'] == 'act' :
                     logger.info('Loading %s', p['sg_script_path']['name'])
+                    loadPlugin( args['engine'], p['sg_script_path']['local_path'])
                 else : #Disable the plugin
                     logger.info('Unloading %s', p['sg_script_path']['name'])
         
