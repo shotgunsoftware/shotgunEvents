@@ -301,11 +301,13 @@ class Engine(daemonizer.Daemon):
 
         _addMailHandlerToLogger(logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure)
 
-    def getCollectionForPath( self, path, autoDiscover=True ) :
+    def getCollectionForPath( self, path, autoDiscover=True, ensureExists=True ) :
         """
         Return a plugin collection to handle the given path
         @param path : The path to return a collection for
-        @return: A collection that will handle the path.
+		@param autoDiscover : Should the collection check for new plugin and load them
+		@param ensureExists : Create the collection if it does not exist
+        @return: A collection that will handle the path or None.
         @rtype: L{PluginCollection}		 
         """
         # Check if we already have a plugin collection covering the directory path
@@ -313,12 +315,25 @@ class Engine(daemonizer.Daemon):
             if pc.path == path :
                 return pc
         else :
+            if not ensureExists :
+                return None
             # Need to create a new plugin collection
             self._pluginCollections.append( PluginCollection(self, path) )
             pc = self._pluginCollections[-1]
             pc._autoDiscover = autoDiscover
             return pc
 
+    def unloadPlugin( self, path ) :
+        """
+        Unload the plugin with the given path
+        """
+        # Get the collection for this path, if any
+        ( dir, file ) = os.path.split( path )
+        pc = self.getCollectionForPath( path, ensureExists=False )
+        if pc :
+            pc.unloadPlugin( file )
+
+            
     def _run(self):
         """
         Start the processing of events.
@@ -609,6 +624,14 @@ class PluginCollection(object):
             self._plugins[file] = Plugin( self._engine, os.path.join( self.path, file))
             self._plugins[file].load()
         return self._plugins[file]
+
+    def unloadPlugin( self, file ) :
+        """
+        Unload the given plugin
+        @param file : short name of the plugin to unload from this collection
+        """
+        if file in self._plugins :
+            self._plugins.pop( file )
     
     def __iter__(self):
         for basename in sorted(self._plugins.keys()):

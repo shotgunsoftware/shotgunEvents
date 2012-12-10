@@ -104,6 +104,7 @@ def pluginEventCB(sg, logger, event, args):
                     loadPlugin( args['engine'], p['sg_script_path']['local_path'])
                 else : #Disable the plugin
                     logger.info('Unloading %s', p['sg_script_path']['name'])
-        
+                    args['engine'].unloadPlugin( p['sg_script_path']['local_path'])
+         
 
 
