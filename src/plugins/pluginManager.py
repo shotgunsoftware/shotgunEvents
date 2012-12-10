@@ -45,10 +45,10 @@ def registerCallbacks(reg):
         reg.logger.debug( "Using %s %s" % ( k, settings[k] ) )
     settings['engine'] = reg.getEngine()
     # Register all callbacks related to our custom entity
-    events = [ r'Shotgun_%s_New', r'Shotgun_%s_Change', r'Shotgun_%s_New', r'Shotgun_%s_Retirement', r'Shotgun_%s_Revival']
+    events = [ r'Shotgun_%s_New', r'Shotgun_%s_Change', r'Shotgun_%s_Retirement', r'Shotgun_%s_Revival']
     eventFilter = {}
     for e in events :
-        eventFilter[ e % settings['sgEntity'] ] = ['sg_status_list', 'retirement_date' ] # retirement_date
+        eventFilter[ e % settings['sgEntity'] ] = ['sg_status_list', 'retirement_date', 'sg_script_path' ] # retirement_date
     reg.logger.debug( "Registering %s" % eventFilter)
     reg.registerCallback( settings['script_name'], settings['script_key'], pluginEventCB, eventFilter, settings )
 
@@ -90,6 +90,19 @@ def pluginEventCB(sg, logger, event, args):
                 else : #Disable the plugin
                     logger.info('Unloading %s', p['sg_script_path']['name'])
                     args['engine'].unloadPlugin( p['sg_script_path']['local_path'])
+        elif attribute == 'sg_script_path' : # Should unload and reload the plugin
+            pass
+    elif e.search( 'Retirement$', etype ) : # Unload the plugin
+        p = sg.find_one( entity['type'], [[ 'id', 'is', entity['id']]], ['sg_script_path'] )
+        if p['sg_script_path'] and p['sg_script_path']['local_path'] :
+            logger.info('Unloading %s', p['sg_script_path']['name'])
+            args['engine'].unloadPlugin( p['sg_script_path']['local_path'])
+    elif e.search( 'Revival$', etype ) : #Should reload the plugin
+        p = sg.find_one( entity['type'], [[ 'id', 'is', entity['id']]], ['sg_script_path', 'sg_status_list'] )
+        if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act' :
+            logger.info('Loading %s', p['sg_script_path']['name'])
+            args['engine'].loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False)
+
          
 
 
