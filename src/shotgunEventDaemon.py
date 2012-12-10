@@ -323,6 +323,22 @@ class Engine(daemonizer.Daemon):
             pc._autoDiscover = autoDiscover
             return pc
 
+
+    def loadPlugin( self, path, autoDiscover=True ) :
+        """
+            Load the given plugin in the given Engine
+            @param engine : The engine to load the plugin into
+            @param path : Full path to the plugin Python script
+            @param autoDiscover: Wether or not the collection should automatically discover new plugins
+        """
+        # Check that everything looks right
+        if not os.path.isfile(path) :
+            raise ValueError( "%s is not a valid file path" % path )
+        ( dir, file ) = os.path.split( path )
+        pc = self.getCollectionForPath( dir, ensureExists=True, autoDiscover=autoDiscover )
+        p = pc.getPlugin( file )
+        return p
+
     def unloadPlugin( self, path ) :
         """
         Unload the plugin with the given path

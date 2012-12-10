@@ -59,26 +59,11 @@ def registerCallbacks(reg):
     for p in plugins :
         if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act' :
             reg.logger.info( "Loading %s", p['sg_script_path']['name'] )
-            loadPlugin( reg.getEngine(), p['sg_script_path']['local_path'])
+            reg.getEngine().loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False )
     # Set the logging level for this particular plugin. Let error and above
     # messages through but block info and lower. This is particularly usefull
     # for enabling and disabling debugging on a per plugin basis.
     #reg.logger.setLevel(logging.ERROR)
-
-def loadPlugin( engine, path ) :
-    """
-        Load the given plugin in the given Engine
-        @param engine : The engine to load the plugin into
-        @param path : Full path to the plugin Python script
-    """
-    # Check that everything looks right
-    if not os.path.isfile(path) :
-        raise ValueError( "%s is not a valid file path" % path )
-    ( dir, file ) = os.path.split( path )
-    pc = engine.getCollectionForPath( dir, autoDiscover=False )
-    p = pc.getPlugin( file )
-    return p
-
 
 def pluginEventCB(sg, logger, event, args):
     """
@@ -101,7 +86,7 @@ def pluginEventCB(sg, logger, event, args):
             if p['sg_script_path'] and p['sg_script_path']['local_path'] :
                 if event['meta']['new_value'] == 'act' :
                     logger.info('Loading %s', p['sg_script_path']['name'])
-                    loadPlugin( args['engine'], p['sg_script_path']['local_path'])
+                    args['engine'].loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False)
                 else : #Disable the plugin
                     logger.info('Unloading %s', p['sg_script_path']['name'])
                     args['engine'].unloadPlugin( p['sg_script_path']['local_path'])
