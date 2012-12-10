@@ -651,7 +651,8 @@ class PluginCollection(object):
     
     def __iter__(self):
         for basename in sorted(self._plugins.keys()):
-            yield self._plugins[basename]
+            if basename in self._plugins : # handle the case where plugins were removed while looping
+                yield self._plugins[basename]
 
 
 class Plugin(object):
