@@ -326,18 +326,14 @@ class Engine(daemonizer.Daemon):
 
     def loadPlugin( self, path, autoDiscover=True ) :
         """
-            Load the given plugin in the given Engine
-            @param engine : The engine to load the plugin into
-            @param path : Full path to the plugin Python script
-            @param autoDiscover: Wether or not the collection should automatically discover new plugins
+        Load the given plugin into the Engine
+        @param path : Full path to the plugin Python script
+        @param autoDiscover: Wether or not the collection should automatically discover new plugins
         """
         # Check that everything looks right
         if not os.path.isfile(path) :
             raise ValueError( "%s is not a valid file path" % path )
-        ( dir, file ) = os.path.split( path )
-        pc = self.getCollectionForPath( dir, ensureExists=True, autoDiscover=autoDiscover )
-        p = pc.getPlugin( file )
-        return p
+        return self.getPlugin( path, ensureExists=True, autoDiscover=autoDiscover )
 
     def unloadPlugin( self, path ) :
         """
@@ -349,6 +345,20 @@ class Engine(daemonizer.Daemon):
         if pc :
             pc.unloadPlugin( file )
 
+    def getPlugin( self , path, ensureExists=False, autoDiscover=False ) :
+        """
+        Return the plugin with the given path if loaded in the Engine
+        If ensureExists is True, make sure the plugin is loaded if not already
+        @param path : Full path to the wanted plugin
+        @param ensureExists : Wether or not the plugin should be loaded if not already
+        @param autoDiscover : if a new Collection is created, wheter or not it should automatically check for new scripts
+        """
+        ( dir, file ) = os.path.split( path )
+        pc = self.getCollectionForPath( dir, ensureExists=ensureExists, autoDiscover=autoDiscover )
+        p = None
+        if pc :
+            p = pc.getPlugin( file, ensureExists=ensureExists )
+        return p
             
     def _run(self):
         """
@@ -629,16 +639,21 @@ class PluginCollection(object):
 		#TODO : report something when plugins are gone missing
         self._plugins = newPlugins
 
-    def getPlugin( self, file ) :
+    def getPlugin( self, file, ensureExists=True ) :
         """
-        Ensure a particular plugin is loaded in this collection
-        @param file : short name of the plugin to load in this collection
+        Return the plugin from this collection.
+        If ensureExists is True, ensure it is loaded in this collection.
+        @param file : short name of the plugin to retrieve from this collection
         @type file : I{str}
-        @rtype : L{Plugin}
+        @param ensureExists : wether or not the plugin should be loaded if not already
+        @rtype : L{Plugin} or None
         """
         if file not in self._plugins : # Plugin is not already loaded
-            self._plugins[file] = Plugin( self._engine, os.path.join( self.path, file))
-            self._plugins[file].load()
+            if ensureExists :
+                self._plugins[file] = Plugin( self._engine, os.path.join( self.path, file))
+                self._plugins[file].load()
+            else :
+                return None
         return self._plugins[file]
 
     def unloadPlugin( self, file ) :

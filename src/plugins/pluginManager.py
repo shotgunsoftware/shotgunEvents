@@ -48,7 +48,7 @@ def registerCallbacks(reg):
     settings['engine'] = reg.getEngine()
     # Register all callbacks related to our custom entity
     # Attribute change callback
-    eventFilter = { r'Shotgun_%s_Change' % settings['sgEntity'] : ['sg_status_list', 'sg_script_path' ] }
+    eventFilter = { r'Shotgun_%s_Change' % settings['sgEntity'] : ['sg_status_list', 'sg_script_path', 'sg_ignore_projects' ] }
     reg.logger.debug("Registring %s", eventFilter )
     reg.registerCallback( settings['script_name'], settings['script_key'], changeEventCB, eventFilter, settings )
     # Entity change callbacks
@@ -62,12 +62,13 @@ def registerCallbacks(reg):
 
     # Get a list of all the existing plugins from Shotgun
     sgHandle = sg.Shotgun( reg.getEngine().config.getShotgunURL(), settings['script_name'], settings['script_key'] )
-    plugins = sgHandle.find( settings['sgEntity'], [], ['sg_script_path', 'sg_status_list'] )
+    plugins = sgHandle.find( settings['sgEntity'], [], ['sg_script_path', 'sg_status_list', 'sg_ignore_projects'] )
     reg.logger.debug( "Plugins : %s", plugins )
     for p in plugins :
         if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act'  and os.path.isfile( p['sg_script_path']['local_path'] ) :
             reg.logger.info( "Loading %s", p['sg_script_path']['name'] )
-            reg.getEngine().loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False )
+            pl = reg.getEngine().loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False )
+            pl._pm_ignore_projects = p['sg_ignore_projects']
 
     #reg.logger.setLevel(logging.ERROR)
 
@@ -87,30 +88,41 @@ def changeEventCB(sg, logger, event, args):
     if attribute == 'sg_status_list' :
         logger.info( "Status changed for %s", entity['name'] )
         # We need some details to know what to do
-        p = sg.find_one( entity['type'], [[ 'id', 'is', entity['id']]], ['sg_script_path'] )
+        p = sg.find_one( entity['type'], [[ 'id', 'is', entity['id']]], ['sg_script_path', 'sg_ignore_projects'] )
         if p['sg_script_path'] and p['sg_script_path']['local_path'] and os.path.isfile( p['sg_script_path']['local_path'] ) :
             if event['meta']['new_value'] == 'act' :
                 logger.info('Loading %s', p['sg_script_path']['name'])
-                args['engine'].loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False)
+                pl = args['engine'].loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False)
+                pl._pm_ignore_projects = p['sg_ignore_projects']
             else : #Disable the plugin
                 logger.info('Unloading %s', p['sg_script_path']['name'])
                 args['engine'].unloadPlugin( p['sg_script_path']['local_path'])
     elif attribute == 'sg_script_path' : # Should unload and reload the plugin
         logger.info( "Script path changed for %s", entity['name'] )
         # We need some details to know what to do
-        p = sg.find_one( entity['type'], [[ 'id', 'is', entity['id']]], ['sg_status_list', 'sg_script_path'] )
+        p = sg.find_one( entity['type'], [[ 'id', 'is', entity['id']]], ['sg_status_list', 'sg_script_path', 'sg_ignore_projects'] )
         old_val = event['meta']['old_value']
-        file_path = old_val['file_path'] # This is not the full path, it is local to the storage
-        # We need to rebuild the old path
-        local_path = { 'darwin' : 'mac_path', 'win32' : 'windows_path', 'linux' : 'linux_path', 'linux2' : 'linux_path' }[ sys.platform]
-        st = sg.find_one( 'LocalStorage', [[ 'id', 'is',  old_val['local_storage_id'] ]], [local_path ] )
-        path = os.path.join( st[ local_path], file_path )
-        logger.info('Unloading %s', os.path.basename( path ))
-        args['engine'].unloadPlugin( path )
+        # Unload the plugin if loaded
+        if old_val : # Couldn't be loaded if empty or None
+            file_path = old_val['file_path'] # This is not the full path, it is local to the storage
+            # We need to rebuild the old path
+            local_path = { 'darwin' : 'mac_path', 'win32' : 'windows_path', 'linux' : 'linux_path', 'linux2' : 'linux_path' }[ sys.platform]
+            st = sg.find_one( 'LocalStorage', [[ 'id', 'is',  old_val['local_storage_id'] ]], [local_path ] )
+            path = os.path.join( st[ local_path], file_path )
+            logger.info('Unloading %s', os.path.basename( path ))
+            args['engine'].unloadPlugin( path )
+        # Reload the plugin if possible
         if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act' and os.path.isfile( p['sg_script_path']['local_path'] ) :
             logger.info('Loading %s', p['sg_script_path']['name'])
-            args['engine'].loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False)
-
+            pl = args['engine'].loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False)
+            pl._pm_ignore_projects = p['sg_ignore_projects']
+    elif attribute == 'sg_ignore_projects' :
+        logger.info( "'Ignore projects' changed for %s", entity['name'] )
+        p = sg.find_one( entity['type'], [[ 'id', 'is', entity['id']]], ['sg_status_list', 'sg_script_path', 'sg_ignore_projects'] )
+        if p['sg_script_path'] and p['sg_script_path']['local_path'] :
+            pl = args['engine'].getPlugin( p['sg_script_path']['local_path'] )
+            if pl :
+                pl._pm_ignore_projects = p['sg_ignore_projects']
          
 def entityEventCB(sg, logger, event, args):
     """
@@ -131,9 +143,10 @@ def entityEventCB(sg, logger, event, args):
             logger.info('Unloading %s', p['sg_script_path']['name'])
             args['engine'].unloadPlugin( p['sg_script_path']['local_path'])
     elif re.search( 'Revival$', etype ) or re.search( 'New$', etype ): #Should reload the plugin
-        p = sg.find_one( meta['entity_type'], [[ 'id', 'is', meta['entity_id']]], ['sg_script_path', 'sg_status_list'] )
+        p = sg.find_one( meta['entity_type'], [[ 'id', 'is', meta['entity_id']]], ['sg_script_path', 'sg_status_list', 'sg_ignore_projects'] )
         if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act' and os.path.isfile( p['sg_script_path']['local_path'] ) :
             logger.info('Loading %s', p['sg_script_path']['name'])
-            args['engine'].loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False)
+            pl = args['engine'].loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False)
+            pl._pm_ignore_projects = p['sg_ignore_projects']
 
 
