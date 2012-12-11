@@ -1,5 +1,5 @@
 """
-For detailed information please see
+For detailed information about the event loop, please see
 
 http://shotgunsoftware.github.com/shotgunEvents/api.html
 """
@@ -10,30 +10,13 @@ import re
 import sys
 
 def registerCallbacks(reg):
-    """Register all necessary or appropriate callbacks for this plugin."""
+    """
+    Register attribute and entity changes callbacks for plugins registered in Shotgun.
+    Load plugins registered in Shotgun
+    """
 
-    # Specify who should recieve email notifications when they are sent out.
-    #
-    #reg.setEmails('me@mydomain.com')
+    reg.logger.debug('Loading pluginManager plugin.')
 
-    # Use a preconfigured logging.Logger object to report info to log file or
-    # email. By default error and critical messages will be reported via email
-    # and logged to file, all other levels are logged to file.
-    #
-    #reg.logger.debug('Loading logArgs plugin.')
-
-    # Register a callback to into the event processing system.
-    #
-    # Arguments:
-    # - Shotgun script name
-    # - Shotgun script key
-    # - Callable
-    # - Argument to pass through to the callable
-    # - A filter to match events to so the callable is only invoked when
-    #   appropriate
-    #
-    #eventFilter = {'Shotgun_Task_Change': ['sg_status_list']}
-    eventFilter = None
     # Retrieve config values
     my_name = reg.getName()
     cfg = reg.getConfig()
@@ -45,12 +28,16 @@ def registerCallbacks(reg):
     for k in keys :
         settings[k] = cfg.get( my_name, k )
         reg.logger.debug( "Using %s %s" % ( k, settings[k] ) )
+    # We will need access to the Engine from callbacks
     settings['engine'] = reg.getEngine()
+
     # Register all callbacks related to our custom entity
+
     # Attribute change callback
     eventFilter = { r'Shotgun_%s_Change' % settings['sgEntity'] : ['sg_status_list', 'sg_script_path', 'sg_ignore_projects' ] }
     reg.logger.debug("Registring %s", eventFilter )
     reg.registerCallback( settings['script_name'], settings['script_key'], changeEventCB, eventFilter, settings )
+
     # Entity change callbacks
     eventFilter = {
         r'Shotgun_%s_New' % settings['sgEntity'] : None,
