@@ -65,7 +65,7 @@ def registerCallbacks(reg):
     plugins = sgHandle.find( settings['sgEntity'], [], ['sg_script_path', 'sg_status_list'] )
     reg.logger.debug( "Plugins : %s", plugins )
     for p in plugins :
-        if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act' :
+        if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act'  and os.path.isfile( p['sg_script_path']['local_path'] ) :
             reg.logger.info( "Loading %s", p['sg_script_path']['name'] )
             reg.getEngine().loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False )
 
@@ -132,7 +132,7 @@ def entityEventCB(sg, logger, event, args):
             args['engine'].unloadPlugin( p['sg_script_path']['local_path'])
     elif re.search( 'Revival$', etype ) or re.search( 'New$', etype ): #Should reload the plugin
         p = sg.find_one( meta['entity_type'], [[ 'id', 'is', meta['entity_id']]], ['sg_script_path', 'sg_status_list'] )
-        if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act' and  and os.path.isfile( p['sg_script_path']['local_path'] ) :
+        if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act' and os.path.isfile( p['sg_script_path']['local_path'] ) :
             logger.info('Loading %s', p['sg_script_path']['name'])
             args['engine'].loadPlugin( p['sg_script_path']['local_path'], autoDiscover=False)
 
