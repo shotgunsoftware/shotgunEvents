@@ -2,7 +2,20 @@
 For detailed information about the event loop, please see
 
 http://shotgunsoftware.github.com/shotgunEvents/api.html
+
+This plugin allows to control plugins from Shotgun. 
+To use it :
+- Enable a Custom Non Project Entity in Shotgun, rename it to Plugins ( or whatever name you fancy ).
+- Add a 'Script Path' File/Link field to the entity, to control where a plugin script will be.
+- Add a 'Ignore Projects' multi entity Project field to the entity, to control the list of projects where a plugin shouldn't be active.
+- Edit your shotgunEventDaemon.conf file, and add the section :
+ [pluginManager]
+ sgEntity : CustomNonProjectEntity15 # the entity you enabled
+ script_key = ??????? # The Shotgun script key to use by the pluginManager plugin
+ script_name = ?????? # The Shotgun script name to use by the pluginManager plugin
+- Copy this file in a place where your shotgunEventDaemon.py script can find it
 """
+
 import logging
 import os
 import shotgun_api3 as sg
