@@ -1,0 +1,9 @@
+shotgunloop.centos.d : A starting point to add the event loop to your /etc/init.d on CentOs
+- Copy the file in /etc/init.d
+- Change the settings that need to be tweaked
+- Use chkconfig to set up the wanted run level
+- Change the exec path to either point to the shotgunLoop.sh wrapper or directly to your shotgunEventDaemon.py
+
+shotgunLoop.sh : A small shell wrapper to use a local shotgun_api module
+- Copy this file in the directory where shotgunEventDaemon.py is
+- Tweak the paths to point to the place where your local shotgun_api is installed
