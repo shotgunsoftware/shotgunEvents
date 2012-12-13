@@ -561,6 +561,23 @@ class Engine(daemonizer.Daemon):
             self.log.warning('Unable to connect to Shotgun (attempt %s of %s): %s', conn_attempts, self._max_conn_retries, msg)
         return conn_attempts
 
+    def _runSingleEvent( self, eventId ) :
+        # Setup the stdout logger
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+        logging.getLogger().addHandler(handler)
+        # Retrieve the event
+        fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid']
+        result = self._sg.find_one("EventLogEntry", filters=[['id', 'is', eventId]], fields=fields )
+        if not result :
+            raise ValueError("Couldn't find event %d" % eventId)
+        for collection in self._pluginCollections:
+            collection.load()
+        #Process the event
+        self.log.info( "Treating event %d", result['id'])
+        for collection in self._pluginCollections:
+            collection.process( result, forceEvent=True )
+
 
 class PluginCollection(object):
     """
@@ -604,11 +621,11 @@ class PluginCollection(object):
                 eId = newId
         return eId
 
-    def process(self, event):
+    def process(self, event, forceEvent=False ):
         for plugin in self:
             if plugin.isActive():
                 plugin.logger.debug( "Checking event %d", event['id'])
-                plugin.process(event)
+                plugin.process(event, forceEvent )
             else:
                 plugin.logger.debug('Skipping: inactive.')
 
@@ -812,8 +829,13 @@ class Plugin(object):
         sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey)
         self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args))
 
-    def process(self, event):
+    def process(self, event, forceEvent=False ):
         self.logger.debug( "Processing %s", event['id'] )
+
+        if forceEvent : # Perform a raw process of the event
+            self._process( event )
+            return self._active
+        
         if event['id'] in self._backlog:
             if self._process(event):
                 self.logger.info('Processed id %d from backlog.' % event['id'])
@@ -1141,15 +1163,24 @@ def main():
 
         # Find the function to call on the daemon
         action = sys.argv[1]
-        func = getattr(daemon, action, None)
+		# Special case where we give an integer on the command line
+		# Just treat this event
+        try :
+            eid = int( action )
+        except ValueError : # Not an int
+            func = getattr(daemon, action, None)
 
-        # If no function was found, report error.
-        if action[:1] == '_' or func is None:
-            print "Unknown command: %s" % action
-            return 2
+            # If no function was found, report error.
+            if action[:1] == '_' or func is None:
+                print "Unknown command: %s" % action
+                return 2
 
-        # Call the requested function
-        func()
+            # Call the requested function
+            func()
+        else :
+            print "Processing single event %d" % eid
+            daemon._runSingleEvent( eid )
+            return 0
     else:
         print "usage: %s start|stop|restart|foreground" % sys.argv[0]
         return 2

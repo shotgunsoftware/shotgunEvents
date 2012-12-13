@@ -1,10 +1,9 @@
 #!/bin/bash
 #
-# svnserve        Startup script for the Subversion svnserve daemon
+# shotgunloop        Startup script for the Shotgun Loop daemon
 #
 # chkconfig: - 85 15
-# description: The svnserve daemon allows access to Subversion repositories \
-#              using the svn network protocol.
+# description: The shotgunloop daemon parses and filters Shotgun events and fires registered callbacks
 # processname: shotgunloop
 # config: /etc/sysconfig/shotgunloop
 # pidfile: /var/run/shotgunloop.pid
@@ -14,8 +13,7 @@
 # Required-Start: $local_fs $remote_fs $network
 # Required-Stop: $local_fs $remote_fs $network
 # Short-Description: start and stop the shotgunloop daemon
-# Description: The svnserve daemon allows access to Subversion
-#   repositories using the svn network protocol.
+# Description: The shotgunloop daemon parses and filters Shotgun events and fires registered callbacks
 ### END INIT INFO
 
 # Source function library.
@@ -27,6 +25,7 @@ fi
 
 exec=/var/local/shotgunLoop/src/shotgunLoop.sh
 prog=shotgunloop
+#Please make sure that the following is in sycnh with your shotgunEventDaemon.conf
 pidfile=${PIDFILE-/var/run/shotgunloop.pid}
 lockfile=${LOCKFILE-/var/lock/subsys/shotgunloop.lock}
 #args="--daemon --pid-file=${pidfile} $OPTIONS"
