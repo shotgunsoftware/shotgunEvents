@@ -341,8 +341,9 @@ class Engine(daemonizer.Daemon):
         """
         # Get the collection for this path, if any
         ( dir, file ) = os.path.split( path )
-        pc = self.getCollectionForPath( path, ensureExists=False )
+        pc = self.getCollectionForPath( dir, ensureExists=False )
         if pc :
+            self.log.debug("Unloading %s from %s", file, pc.path )
             pc.unloadPlugin( file )
 
     def getPlugin( self , path, ensureExists=False, autoDiscover=False ) :
@@ -485,7 +486,7 @@ class Engine(daemonizer.Daemon):
             # Reload plugins
             for collection in self._pluginCollections:
                 collection.load()
-                
+
             # Make sure that newly loaded events have proper state.
             self._loadEventIdData()
 
