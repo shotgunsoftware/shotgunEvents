@@ -7,11 +7,11 @@ import sys
 import pprint
 
 def main( ) :
-	eventIdFile = sys.argv[1]
-	with open(eventIdFile) as fh :
-		eventIdData = pickle.load(fh)
-		pprint.pprint( eventIdData )
-	return 0
+    eventIdFile = sys.argv[1]
+    with open(eventIdFile) as fh :
+        eventIdData = pickle.load(fh)
+        pprint.pprint( eventIdData )
+    return 0
 	
 if __name__ == '__main__':
-	sys.exit( main() )
+    sys.exit( main() )
