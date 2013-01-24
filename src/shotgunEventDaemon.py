@@ -99,7 +99,7 @@ def _removeHandlersFromLogger(logger, handlerTypes=None):
             logger.removeHandler(handler)
 
 
-def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username=None, password=None, secure=None):
+def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username=None, password=None, secure=None, use_ssl=None):
     """
     Configure a logger with a handler that sends emails to specified
     addresses.
@@ -115,7 +115,7 @@ def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject,
         SMTPHandler.
     """
     if smtpServer and fromAddr and toAddrs and emailSubject:
-        mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject, (username, password), secure)
+        mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject, (username, password), secure, use_ssl)
         mailHandler.setLevel(logging.ERROR)
         mailFormatter = logging.Formatter(EMAIL_FORMAT_STRING)
         mailHandler.setFormatter(mailFormatter)
@@ -178,6 +178,11 @@ class Config(ConfigParser.ConfigParser):
     def getSecureSMTP(self):
         if self.has_option('emails', 'useTLS'):
             return self.getboolean('emails', 'useTLS') or False
+        return False
+
+    def getUseSSL(self):
+        if self.has_option('emails', 'useSSL'):
+            return self.getboolean('emails', 'useSSL') or False
         return False
 
     def getLogMode(self):
@@ -290,7 +295,12 @@ class Engine(daemonizer.Daemon):
             secure = (None, None)
         else:
             secure = None
-
+        
+        if self.config.getUseSSL() :
+            use_ssl = True
+        else :
+            use_ssl= None
+    
         if emails is True:
             toAddrs = self.config.getToAddrs()
         elif isinstance(emails, (list, tuple)):
@@ -299,7 +309,7 @@ class Engine(daemonizer.Daemon):
             msg = 'Argument emails should be True to use the default addresses, False to not send any emails or a list of recipient addresses. Got %s.'
             raise ValueError(msg % type(emails))
 
-        _addMailHandlerToLogger(logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure)
+        _addMailHandlerToLogger(logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure, use_ssl)
 
     def getCollectionForPath( self, path, autoDiscover=True, ensureExists=True ) :
         """
@@ -1078,7 +1088,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
         logging.CRITICAL: 'CRITICAL - Shotgun event daemon.',
     }
 
-    def __init__(self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None):
+    def __init__(self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None, use_ssl=None):
         args = [smtpServer, fromAddr, toAddrs, emailSubject]
         if credentials:
             # Python 2.6 implemented the credentials argument
@@ -1091,11 +1101,16 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
                     self.username = None
 
             # Python 2.7 implemented the secure argument
+
+			# Could be wrong here, but I think this is not used at all
+			# emit is redefined and open its own connection
+			# so the one opened up by the handler is simply ignored ? S.D.
             if CURRENT_PYTHON_VERSION >= PYTHON_27:
                 args.append(secure)
             else:
                 self.secure = secure
-
+            if use_ssl :
+                self.use_ssl = True
         logging.handlers.SMTPHandler.__init__(self, *args)
 
     def getSubject(self, record):
@@ -1125,8 +1140,11 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
             port = self.mailport
             if not port:
                 port = smtplib.SMTP_PORT
-            smtp = smtplib.SMTP()
-            smtp.connect(self.mailhost, port)
+            if self.use_ssl is not None :
+                smtp = smtplib.SMTP_SSL(self.mailhost, port)
+                smtp.ehlo()
+            else :
+                smtp = smtplib.SMTP(self.mailhost, port)
             msg = self.format(record)
             msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s" % (
                             self.fromaddr,
@@ -1134,7 +1152,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
                             self.getSubject(record),
                             formatdate(), msg)
             if self.username:
-                if self.secure is not None:
+                if self.secure is not None and self.use_ssl is None :
                     smtp.ehlo()
                     smtp.starttls(*self.secure)
                     smtp.ehlo()
