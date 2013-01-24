@@ -105,7 +105,7 @@ def changeEventCB(sg, logger, event, args):
         p = sg.find_one( entity['type'], [[ 'id', 'is', entity['id']]], ['sg_status_list', 'sg_script_path', 'sg_ignore_projects'] )
         old_val = event['meta']['old_value']
         # Unload the plugin if loaded
-        if old_val : # Couldn't be loaded if empty or None
+        if old_val and 'file_path' in old_val : # Couldn't be loaded if empty or None
             file_path = old_val['file_path'] # This is not the full path, it is local to the storage
             # We need to rebuild the old path
             local_path = { 'darwin' : 'mac_path', 'win32' : 'windows_path', 'linux' : 'linux_path', 'linux2' : 'linux_path' }[ sys.platform]
