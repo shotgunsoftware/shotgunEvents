@@ -999,8 +999,8 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
                     smtp.starttls(*self.secure)
                     smtp.ehlo()
                 smtp.login(self.username, self.password)
-            #smtp.sendmail(self.fromaddr, self.toaddrs, msg)
-            #smtp.close()
+            smtp.sendmail(self.fromaddr, self.toaddrs, msg)
+            smtp.close()
         except (KeyboardInterrupt, SystemExit):
             socket.setdefaulttimeout(60)
             raise
