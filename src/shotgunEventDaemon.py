@@ -29,14 +29,12 @@ __version_info__ = (0, 9)
 import ConfigParser
 import datetime
 import imp
-import logging
 import logging.handlers
 import os
 import pprint
 import socket
 import sys
 import time
-import types
 import traceback
 
 from distutils.version import StrictVersion
@@ -137,6 +135,11 @@ class Config(ConfigParser.ConfigParser):
     def getShotgunURL(self):
         return self.get('shotgun', 'server')
 
+    def getShotgunProxy(self):
+        if self.has_option('proxy', 'http_proxy'):
+            return self.get('proxy', 'http_proxy')
+        return None
+
     def getEngineScriptName(self):
         return self.get('shotgun', 'name')
 
@@ -153,7 +156,9 @@ class Config(ConfigParser.ConfigParser):
         return [s.strip() for s in self.get('plugins', 'paths').split(',')]
 
     def getSMTPServer(self):
-        return self.get('emails', 'server')
+        if self.has_option('emails', 'server'):
+            return self.get('emails', 'server')
+        return None
 
     def getSMTPPort(self):
         if self.has_option('emails', 'port'):
@@ -237,7 +242,8 @@ class Engine(object):
         self._sg = sg.Shotgun(
             self.config.getShotgunURL(),
             self.config.getEngineScriptName(),
-            self.config.getEngineScriptKey()
+            self.config.getEngineScriptKey(),
+            http_proxy=self.config.getShotgunProxy()
         )
         self._max_conn_retries = self.config.getint('daemon', 'max_conn_retries')
         self._conn_retry_sleep = self.config.getint('daemon', 'conn_retry_sleep')
@@ -372,7 +378,7 @@ class Engine(object):
                 order = [{'column':'id', 'direction':'desc'}]
                 try:
                     result = self._sg.find_one("EventLogEntry", filters=[], fields=['id'], order=order)
-                except (sg.ProtocolError, sg.ResponseError, socket.err), err:
+                except (sg.ProtocolError, sg.ResponseError, socket.error), err:
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
                 except Exception, err:
                     msg = "Unknown error: %s" % str(err)
@@ -421,7 +427,7 @@ class Engine(object):
             # Reload plugins
             for collection in self._pluginCollections:
                 collection.load()
-                
+
             # Make sure that newly loaded events have proper state.
             self._loadEventIdData()
 
@@ -446,7 +452,7 @@ class Engine(object):
             filters = [['id', 'greater_than', nextEventId - 1]]
             fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid']
             order = [{'column':'id', 'direction':'asc'}]
-    
+
             conn_attempts = 0
             while True:
                 try:
@@ -463,7 +469,7 @@ class Engine(object):
 
     def _saveEventIdData(self):
         """
-        Save an event Id to persistant storage.
+        Save an event Id to persistent storage.
 
         Next time the engine is started it will try to read the event id from
         this location to know at which event it should start processing.
@@ -580,9 +586,9 @@ class Plugin(object):
     The plugin class represents a file on disk which contains one or more
     callbacks.
     """
-    def __init__(self, engine, path):
+    def __init__(self, engine, path, emails=True):
         """
-        @param engine: The engine that instanciated this plugin.
+        @param engine: The engine that instantiated this plugin.
         @type engine: L{Engine}
         @param path: The path of the plugin file to load.
         @type path: I{str}
@@ -605,7 +611,7 @@ class Plugin(object):
         # Setup the plugin's logger
         self.logger = logging.getLogger('plugin.' + self.getName())
         self.logger.config = self._engine.config
-        self._engine.setEmailsOnLogger(self.logger, True)
+        self._engine.setEmailsOnLogger(self.logger, emails)
         self.logger.setLevel(self._engine.config.getLogLevel())
         if self._engine.config.getLogMode() == 1:
             _setFilePathOnLogger(self.logger, self._engine.config.getLogFile('plugin.' + self.getName()))
@@ -714,7 +720,7 @@ class Plugin(object):
         Register a callback in the plugin.
         """
         global sg
-        sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey)
+        sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey, http_proxy=self._engine.config.getShotgunProxy())
         self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args, stopOnError))
 
     def process(self, event):
@@ -818,7 +824,7 @@ class Callback(object):
         @type logger: I{logging.Logger}
         @param matchEvents: The event filter to match events against before invoking callback.
         @type matchEvents: dict
-        @param args: Any datastructure you would like to be passed to your
+        @param args: Any data-structure you would like to be passed to your
             callback function. Defaults to None.
         @type args: Any object.
 
@@ -993,8 +999,8 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
                     smtp.starttls(*self.secure)
                     smtp.ehlo()
                 smtp.login(self.username, self.password)
-            smtp.sendmail(self.fromaddr, self.toaddrs, msg)
-            smtp.close()
+            #smtp.sendmail(self.fromaddr, self.toaddrs, msg)
+            #smtp.close()
         except (KeyboardInterrupt, SystemExit):
             socket.setdefaulttimeout(60)
             raise
