@@ -383,7 +383,6 @@ class Engine(daemonizer.Daemon):
 
         # Notify which version of shotgun api we are using
         self.log.info('Using Shotgun version %s' % sg.__version__)
-
         try:
             for collection in self._pluginCollections:
                 collection.load()
@@ -1111,6 +1110,8 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
                 self.secure = secure
             if use_ssl :
                 self.use_ssl = True
+            else :
+                self.use_ssl = None 
         logging.handlers.SMTPHandler.__init__(self, *args)
 
     def getSubject(self, record):
