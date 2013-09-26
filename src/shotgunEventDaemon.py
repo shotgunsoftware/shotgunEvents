@@ -714,6 +714,10 @@ class Plugin(object):
         Register a callback in the plugin.
         """
         global sg
+
+        sgScriptName = sgScriptName or self._engine.config.getEngineScriptName()
+        sgScriptKey = sgScriptKey or self._engine.config.getEngineScriptKey()
+
         sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey)
         self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args, stopOnError))
 
