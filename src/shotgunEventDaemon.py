@@ -105,7 +105,7 @@ def _removeHandlersFromLogger(logger, handlerTypes=None):
             logger.removeHandler(handler)
 
 
-def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username=None, password=None, secure=None):
+def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username=None, password=None, secure=None, use_ssl=None):
     """
     Configure a logger with a handler that sends emails to specified
     addresses.
@@ -121,7 +121,7 @@ def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject,
         SMTPHandler.
     """
     if smtpServer and fromAddr and toAddrs and emailSubject:
-        mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject, (username, password), secure)
+        mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject, (username, password), secure, use_ssl)
         mailHandler.setLevel(logging.ERROR)
         mailFormatter = logging.Formatter(EMAIL_FORMAT_STRING)
         mailHandler.setFormatter(mailFormatter)
@@ -153,7 +153,9 @@ class Config(ConfigParser.ConfigParser):
         return [s.strip() for s in self.get('plugins', 'paths').split(',')]
 
     def getSMTPServer(self):
-        return self.get('emails', 'server')
+        if self.has_option('emails', 'server'):
+            return self.get('emails', 'server')
+        return None
 
     def getSMTPPort(self):
         if self.has_option('emails', 'port'):
@@ -182,6 +184,11 @@ class Config(ConfigParser.ConfigParser):
     def getSecureSMTP(self):
         if self.has_option('emails', 'useTLS'):
             return self.getboolean('emails', 'useTLS') or False
+        return False
+
+    def getUseSSL(self):
+        if self.has_option('emails', 'useSSL'):
+            return self.getboolean('emails', 'useSSL') or False
         return False
 
     def getLogMode(self):
@@ -274,6 +281,8 @@ class Engine(object):
             return
 
         smtpServer = self.config.getSMTPServer()
+        if not smtpServer:
+            return
         smtpPort = self.config.getSMTPPort()
         fromAddr = self.config.getFromAddr()
         emailSubject = self.config.getEmailSubject()
@@ -283,7 +292,12 @@ class Engine(object):
             secure = (None, None)
         else:
             secure = None
-
+        
+        if self.config.getUseSSL() :
+            use_ssl = True
+        else :
+            use_ssl= None
+    
         if emails is True:
             toAddrs = self.config.getToAddrs()
         elif isinstance(emails, (list, tuple)):
@@ -292,10 +306,67 @@ class Engine(object):
             msg = 'Argument emails should be True to use the default addresses, False to not send any emails or a list of recipient addresses. Got %s.'
             raise ValueError(msg % type(emails))
 
-        _addMailHandlerToLogger(
-            logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure
-        )
+        _addMailHandlerToLogger(logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure, use_ssl)
 
+        """
+        Return a plugin collection to handle the given path
+        @param path : The path to return a collection for
+		@param autoDiscover : Should the collection check for new plugin and load them
+		@param ensureExists : Create the collection if it does not exist
+        @return: A collection that will handle the path or None.
+        @rtype: L{PluginCollection}		 
+        """
+        # Check if we already have a plugin collection covering the directory path
+        for pc in self._pluginCollections :
+            if pc.path == path :
+                return pc
+        else :
+            if not ensureExists :
+                return None
+            # Need to create a new plugin collection
+            self._pluginCollections.append( PluginCollection(self, path) )
+            pc = self._pluginCollections[-1]
+            pc._autoDiscover = autoDiscover
+            return pc
+
+
+    def loadPlugin( self, path, autoDiscover=True ) :
+        """
+        Load the given plugin into the Engine
+        @param path : Full path to the plugin Python script
+        @param autoDiscover: Wether or not the collection should automatically discover new plugins
+        """
+        # Check that everything looks right
+        if not os.path.isfile(path) :
+            raise ValueError( "%s is not a valid file path" % path )
+        return self.getPlugin( path, ensureExists=True, autoDiscover=autoDiscover )
+
+    def unloadPlugin( self, path ) :
+        """
+        Unload the plugin with the given path
+        """
+        # Get the collection for this path, if any
+        ( dir, file ) = os.path.split( path )
+        pc = self.getCollectionForPath( dir, ensureExists=False )
+        if pc :
+            self.log.debug("Unloading %s from %s", file, pc.path )
+            pc.unloadPlugin( file )
+
+    def getPlugin( self , path, ensureExists=False, autoDiscover=False ) :
+        """
+        Return the plugin with the given path if loaded in the Engine
+        If ensureExists is True, make sure the plugin is loaded if not already
+        @param path : Full path to the wanted plugin
+        @param ensureExists : Wether or not the plugin should be loaded if not already
+        @param autoDiscover : if a new Collection is created, wheter or not it should automatically check for new scripts
+        """
+        ( dir, file ) = os.path.split( path )
+        pc = self.getCollectionForPath( dir, ensureExists=ensureExists, autoDiscover=autoDiscover )
+        p = None
+        if pc :
+            p = pc.getPlugin( file, ensureExists=ensureExists )
+        return p
+            
     def start(self):
         """
         Start the processing of events.
@@ -308,7 +379,6 @@ class Engine(object):
 
         # Notify which version of shotgun api we are using
         self.log.info('Using Shotgun version %s' % sg.__version__)
-
         try:
             for collection in self._pluginCollections:
                 collection.load()
@@ -412,6 +482,7 @@ class Engine(object):
         while self._continue:
             # Process events
             for event in self._getNewEvents():
+                self.log.debug( "Processing %s", event['id'] )
                 for collection in self._pluginCollections:
                     collection.process(event)
                 self._saveEventIdData()
@@ -421,7 +492,7 @@ class Engine(object):
             # Reload plugins
             for collection in self._pluginCollections:
                 collection.load()
-                
+
             # Make sure that newly loaded events have proper state.
             self._loadEventIdData()
 
@@ -450,6 +521,7 @@ class Engine(object):
             conn_attempts = 0
             while True:
                 try:
+                    self.log.debug("Checking events from %d", nextEventId )
                     return self._sg.find("EventLogEntry", filters, fields, order, limit=self.config.getMaxEventBatchSize())
                     if events:
                         self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
@@ -496,6 +568,23 @@ class Engine(object):
             self.log.warning('Unable to connect to Shotgun (attempt %s of %s): %s', conn_attempts, self._max_conn_retries, msg)
         return conn_attempts
 
+    def _runSingleEvent( self, eventId ) :
+        # Setup the stdout logger
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+        logging.getLogger().addHandler(handler)
+        # Retrieve the event
+        fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid']
+        result = self._sg.find_one("EventLogEntry", filters=[['id', 'is', eventId]], fields=fields )
+        if not result :
+            raise ValueError("Couldn't find event %d" % eventId)
+        for collection in self._pluginCollections:
+            collection.load()
+        #Process the event
+        self.log.info( "Treating event %d", result['id'])
+        for collection in self._pluginCollections:
+            collection.process( result, forceEvent=True )
+
 
 class PluginCollection(object):
     """
@@ -507,6 +596,7 @@ class PluginCollection(object):
 
         self._engine = engine
         self.path = path
+        self._autoDiscover = True # Wether or not new plugins should automatically be discovered and loaded
         self._plugins = {}
         self._stateData = {}
 
@@ -538,14 +628,15 @@ class PluginCollection(object):
                 eId = newId
         return eId
 
-    def process(self, event):
+    def process(self, event, forceEvent=False ):
         for plugin in self:
             if plugin.isActive():
-                plugin.process(event)
+                plugin.logger.debug( "Checking event %d", event['id'])
+                plugin.process(event, forceEvent )
             else:
                 plugin.logger.debug('Skipping: inactive.')
 
-    def load(self):
+    def load(self, configPath=None ):
         """
         Load plugins from disk.
 
@@ -563,16 +654,44 @@ class PluginCollection(object):
 
             if basename in self._plugins:
                 newPlugins[basename] = self._plugins[basename]
-            else:
+            elif self._autoDiscover :
                 newPlugins[basename] = Plugin(self._engine, os.path.join(self.path, basename))
 
-            newPlugins[basename].load()
+            if basename in newPlugins :
+                newPlugins[basename].load()
 
+		#TODO : report something when plugins are gone missing
         self._plugins = newPlugins
 
+    def getPlugin( self, file, ensureExists=True ) :
+        """
+        Return the plugin from this collection.
+        If ensureExists is True, ensure it is loaded in this collection.
+        @param file : short name of the plugin to retrieve from this collection
+        @type file : I{str}
+        @param ensureExists : wether or not the plugin should be loaded if not already
+        @rtype : L{Plugin} or None
+        """
+        if file not in self._plugins : # Plugin is not already loaded
+            if ensureExists :
+                self._plugins[file] = Plugin( self._engine, os.path.join( self.path, file))
+                self._plugins[file].load()
+            else :
+                return None
+        return self._plugins[file]
+
+    def unloadPlugin( self, file ) :
+        """
+        Unload the given plugin
+        @param file : short name of the plugin to unload from this collection
+        """
+        if file in self._plugins :
+            self._plugins.pop( file )
+    
     def __iter__(self):
         for basename in sorted(self._plugins.keys()):
-            yield self._plugins[basename]
+            if basename in self._plugins : # handle the case where plugins were removed while looping
+                yield self._plugins[basename]
 
 
 class Plugin(object):
@@ -591,7 +710,7 @@ class Plugin(object):
         """
         self._engine = engine
         self._path = path
-
+        self._configPath = _getConfigPath()
         if not os.path.isfile(path):
             raise ValueError('The path to the plugin is not a valid file - %s.' % path)
 
@@ -659,7 +778,7 @@ class Plugin(object):
         """
         self._engine.setEmailsOnLogger(self.logger, emails)
 
-    def load(self):
+    def load(self ):
         """
         Load/Reload the plugin and all its callbacks.
 
@@ -701,7 +820,7 @@ class Plugin(object):
         regFunc = getattr(plugin, 'registerCallbacks', None)
         if callable(regFunc):
             try:
-                regFunc(Registrar(self))
+                regFunc(Registrar(self, configPath = self._configPath ))
             except:
                 self._engine.log.critical('Error running register callback function from plugin at %s.\n\n%s', self._path, traceback.format_exc())
                 self._active = False
@@ -717,7 +836,13 @@ class Plugin(object):
         sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey)
         self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args, stopOnError))
 
-    def process(self, event):
+    def process(self, event, forceEvent=False ):
+        self.logger.debug( "Processing %s", event['id'] )
+
+        if forceEvent : # Perform a raw process of the event
+            self._process( event )
+            return self._active
+        
         if event['id'] in self._backlog:
             if self._process(event):
                 self.logger.info('Processed id %d from backlog.' % event['id'])
@@ -777,12 +902,13 @@ class Registrar(object):
     """
     See public API docs in docs folder.
     """
-    def __init__(self, plugin):
+    def __init__(self, plugin, configPath=None):
         """
         Wrap a plugin so it can be passed to a user.
         """
         self._plugin = plugin
         self._allowed = ['logger', 'setEmails', 'registerCallback']
+        self._configPath = configPath # Give the plugin the opportunity to read values from the config file
 
     def getLogger(self):
         """
@@ -794,6 +920,33 @@ class Registrar(object):
         # TODO: Fix this ugly protected member access
         return self.logger
 
+    def getConfig( self ):
+        """
+        Return a config parser for this plugin
+        @return: A config parser for this plugin or None
+        @rtype: L{ConfigParser.ConfigParser}
+        """
+        if self._configPath :
+            cfg = ConfigParser.ConfigParser()
+            cfg.read( self._configPath)
+            return cfg
+        return None
+
+    def getEngine( self ) :
+        """
+        Return the engine for this plugin
+        @return : The engine for this plugin
+        @rtype : L{Engine}
+        """
+        return self._plugin._engine
+    def getName( self ) :
+        """
+        Return the name of this plugin
+        @return: The name of this plugin
+        @rtype: I{str}
+        """
+        return self._plugin.getName()
+    
     def __getattr__(self, name):
         if name in self._allowed:
             return getattr(self._plugin, name)
@@ -858,6 +1011,7 @@ class Callback(object):
         else:
             eventType = event['event_type']
             if eventType not in self._matchEvents:
+                self._logger.debug('Rejecting %s not in %s', eventType, self._matchEvents)
                 return False
 
         attributes = self._matchEvents[eventType]
@@ -867,7 +1021,7 @@ class Callback(object):
 
         if event['attribute_name'] and event['attribute_name'] in attributes:
             return True
-
+        self._logger.debug('Rejecting %s not in %s', event['attribute_name'], attributes )
         return False
 
     def process(self, event):
@@ -932,7 +1086,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
         logging.CRITICAL: 'CRITICAL - Shotgun event daemon.',
     }
 
-    def __init__(self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None):
+    def __init__(self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None, use_ssl=None):
         args = [smtpServer, fromAddr, toAddrs, emailSubject]
         if credentials:
             # Python 2.6 implemented the credentials argument
@@ -945,11 +1099,18 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
                     self.username = None
 
             # Python 2.7 implemented the secure argument
+
+			# Could be wrong here, but I think this is not used at all
+			# emit is redefined and open its own connection
+			# so the one opened up by the handler is simply ignored ? S.D.
             if CURRENT_PYTHON_VERSION >= PYTHON_27:
                 args.append(secure)
             else:
                 self.secure = secure
-
+            if use_ssl :
+                self.use_ssl = True
+            else :
+                self.use_ssl = None 
         logging.handlers.SMTPHandler.__init__(self, *args)
 
     def getSubject(self, record):
@@ -979,8 +1140,11 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
             port = self.mailport
             if not port:
                 port = smtplib.SMTP_PORT
-            smtp = smtplib.SMTP()
-            smtp.connect(self.mailhost, port)
+            if self.use_ssl is not None :
+                smtp = smtplib.SMTP_SSL(self.mailhost, port)
+                smtp.ehlo()
+            else :
+                smtp = smtplib.SMTP(self.mailhost, port)
             msg = self.format(record)
             msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s" % (
                             self.fromaddr,
@@ -988,7 +1152,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
                             self.getSubject(record),
                             formatdate(), msg)
             if self.username:
-                if self.secure is not None:
+                if self.secure is not None and self.use_ssl is None :
                     smtp.ehlo()
                     smtp.starttls(*self.secure)
                     smtp.ehlo()
