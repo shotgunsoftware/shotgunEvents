@@ -77,6 +77,9 @@ Line: %(lineno)d
 
 %(message)s"""
 
+ACTIONS = ['start', 'stop', 'restart', 'foreground', 'forceEvents']
+CONFIG_DIRECTORIES = ['/etc', os.path.dirname(__file__)]
+
 
 def _setFilePathOnLogger(logger, path):
     # Remove any previous handler.
@@ -308,6 +311,7 @@ class Engine(object):
 
         _addMailHandlerToLogger(logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure, use_ssl)
 
+    def getCollectionForPath( self, path, autoDiscover=True, ensureExists=True ) :
         """
         Return a plugin collection to handle the given path
         @param path : The path to return a collection for
@@ -1100,9 +1104,9 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
 
             # Python 2.7 implemented the secure argument
 
-			# Could be wrong here, but I think this is not used at all
-			# emit is redefined and open its own connection
-			# so the one opened up by the handler is simply ignored ? S.D.
+            # Could be wrong here, but I think this is not used at all
+            # emit is redefined and open its own connection
+            # so the one opened up by the handler is simply ignored ? S.D.
             if CURRENT_PYTHON_VERSION >= PYTHON_27:
                 args.append(secure)
             else:
@@ -1250,35 +1254,128 @@ class LinuxDaemon(daemonizer.Daemon):
 
 def main():
     """
+    Main entry
     """
     action = None
-    if len(sys.argv) > 1:
-        action = sys.argv[1]
+    eventIds = None
+    configDirectory = None
+    if CURRENT_PYTHON_VERSION < PYTHON_25:
+        print "This version does not support python version prior to 2.5"
+        exit(3)
+    elif CURRENT_PYTHON_VERSION < PYTHON_27:
+        from optparse import OptionParser, OptionGroup
+        usage = "Usage: %prog [options] action\n"
+        usage += "Actions:\n"
+        usage += "\tstart                         start the event loop (daemon)\n"
+        usage += "\tstop                          stop the event loop (daemon)\n"
+        usage += "\tforeground                    start the event loop in foreground\n"
+        usage += "\tforceEvents eventId [eventId] Force a list of events\n"
+        usage += "Options:\n"
+        usage += "\t-c --configDirectory          Custom directory to load config file from\n"
 
-    if sys.platform == 'win32' and action != 'foreground':
+        parser = OptionParser(usage=usage)
+        parser.add_option("-c", "--configDirectory",
+                          metavar='CONFIGDIR',
+                          type='string',
+                          help='Custom directory to load config file from')
+
+        (options, args) = parser.parse_args()
+
+        if len(args) < 1:
+            parser.print_usage()
+            exit(-1)
+
+        action = args[0]
+
+        if action not in ACTIONS:
+            parser.print_usage()
+            exit(-2)
+
+        if action == 'forceEvents':
+            if len(args) < 2:
+                print "At least one event id should be passed.\n"
+                parser.print_usage()
+                exit(-3)
+
+            eventIds = []
+            for eventId in args[1:]:
+                try:
+                    eventId = int(eventId)
+                except ValueError:
+                    print "EventId %s is not valid.\n" % eventId
+                    parser.print_usage()
+                    exit(-4)
+                eventIds.append(eventId)
+        else:
+            if len(args) > 1:
+                print "Only one command should be passed.\n"
+                parser.print_usage()
+                exit(-5)
+
+        configDirectory = options.configDirectory
+    else:
+        import argparse
+        
+        parser = argparse.ArgumentParser(description='Shotgun Event Loop')
+
+        parser.add_argument('-cd', '--configDirectory',
+                            metavar='CONFIGDIRECTORY',
+                            type=str,
+                            required=False,
+                            help='Custom directory to load config file from')
+
+        subparsers = parser.add_subparsers(title='Actions',
+                                           description='Actions handled',
+                                           dest='action',
+                                           help='')
+
+        parserStart = subparsers.add_parser('start',
+                                            help='start the event loop (daemon)')
+        parserStop = subparsers.add_parser('stop',
+                                           help='stop the event loop (daemon)')
+        parserForeground = subparsers.add_parser('foreground',
+                                                 help='start the event loop in foreground')
+        parserForceEvents = subparsers.add_parser('forceEvents',
+                                                  help='Force a list of events')
+        parserForceEvents.add_argument('eventIds',
+                                       metavar='EVENTID',
+                                       type=int,
+                                       nargs='+',
+                                       default=[],
+                                       help='Event ids to force processing')
+
+        args = parser.parse_args()
+        action = args.action
+        if hasattr(args, 'eventIds'):
+            eventIds = args.eventIds
+        if hasattr(args, 'configDirectory'):
+            configDirectory = args.configDirectory
+
+    if configDirectory is not None:
+        CONFIG_DIRECTORIES[:0] = [configDirectory]
+ 
+    if sys.platform == 'win32' and action not in ['foreground', 'forceEvents']:
         win32serviceutil.HandleCommandLine(WindowsService)
         return 0
 
-    if action:
-        daemon = LinuxDaemon()
+    daemon = LinuxDaemon()
 
-        # Find the function to call on the daemon and call it
-        func = getattr(daemon, action, None)
-        if action[:1] != '_' and func is not None:
-            func()
-            return 0
+    if action == 'forceEvents':
+        for eventId in eventIds:
+            daemon._engine._runSingleEvent(eventId)
+        return 0
 
-        print "Unknown command: %s" % action
-
-    print "usage: %s start|stop|restart|foreground" % sys.argv[0]
-    return 2
-
+    # Find the function to call on the daemon and call it
+    func = getattr(daemon, action, None)
+    if func is not None:
+        func()
+        return 0
 
 def _getConfigPath():
     """
     Get the path of the shotgunEventDaemon configuration file.
     """
-    paths = ['/etc', os.path.dirname(__file__)]
+    paths = CONFIG_DIRECTORIES
 
     # Get the current path of the daemon script
     scriptPath = sys.argv[0]
