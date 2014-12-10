@@ -228,6 +228,26 @@ class Config(ConfigParser.ConfigParser):
 
         return path
 
+    def getEnableProjectFiltering(self):
+        if self.has_option('project', 'enableProjectFiltering'):
+            return self.getboolean('project', 'enableProjectFiltering') or False
+        return False
+
+    def getProjectNames(self):
+        if self.getEnableProjectFiltering():
+            if self.has_option('project', 'projectNames'):
+                return self.get('project', 'projectNames').split(',')
+            else:
+                raise ConfigError('Project filtering is enabled but no project'
+                                  ' names are defined')
+        return None
+
+    def getTreatNonProjDepEvents(self):
+        if self.getEnableProjectFiltering():
+            if self.has_option('project', 'treatNonProjectDependentEvents'):
+                return self.getboolean('project', 'treatNonProjectDependentEvents') or False
+        return False
+
 
 class Engine(object):
     """
@@ -254,6 +274,11 @@ class Engine(object):
         self._conn_retry_sleep = self.config.getint('daemon', 'conn_retry_sleep')
         self._fetch_interval = self.config.getint('daemon', 'fetch_interval')
         self._use_session_uuid = self.config.getboolean('shotgun', 'use_session_uuid')
+
+        
+        self.enableProjectFiltering = self.config.getEnableProjectFiltering()
+        self.projectsToFilter = self.config.getProjectNames()
+        self.treatNonProjDepEvents = self.config.getTreatNonProjDepEvents()
 
         # Setup the logger for the main engine
         if self.config.getLogMode() == 0:
@@ -847,7 +872,23 @@ class Plugin(object):
         if forceEvent : # Perform a raw process of the event
             self._process( event )
             return self._active
-        
+
+        # Filtering event by projects
+        if self._engine.enableProjectFiltering:
+            if event['project'] is None:
+                if not self._engine.treatNonProjDepEvents:
+                    self.logger.debug("Ignoring non project dependent event"
+                                      " %s" % event['id'])
+                    self._updateLastEventId(event['id'])
+                    return self._active
+
+            elif event['project']['name'] not in self._engine.projectsToFilter:
+                self.logger.debug("Ignoring event %s from project"
+                                  " %s" % (event['id'],
+                                           event['project']['name']))
+                self._updateLastEventId(event['id'])
+                return self._active
+
         if event['id'] in self._backlog:
             if self._process(event):
                 self.logger.info('Processed id %d from backlog.' % event['id'])
