@@ -242,10 +242,10 @@ class Config(ConfigParser.ConfigParser):
                                   ' names are defined')
         return None
 
-    def getTreatNonProjDepEvents(self):
+    def getTreatNonProjectEvents(self):
         if self.getEnableProjectFiltering():
-            if self.has_option('project', 'treatNonProjectDependentEvents'):
-                return self.getboolean('project', 'treatNonProjectDependentEvents') or False
+            if self.has_option('project', 'treatNonProjectEvents'):
+                return self.getboolean('project', 'treatNonProjectEvents') or False
         return False
 
 
@@ -278,7 +278,7 @@ class Engine(object):
         
         self.enableProjectFiltering = self.config.getEnableProjectFiltering()
         self.projectsToFilter = self.config.getProjectNames()
-        self.treatNonProjDepEvents = self.config.getTreatNonProjDepEvents()
+        self.treatNonProjectEvents = self.config.getTreatNonProjectEvents()
 
         # Setup the logger for the main engine
         if self.config.getLogMode() == 0:
@@ -876,7 +876,7 @@ class Plugin(object):
         # Filtering event by projects
         if self._engine.enableProjectFiltering:
             if event['project'] is None:
-                if not self._engine.treatNonProjDepEvents:
+                if not self._engine.treatNonProjectEvents:
                     self.logger.debug("Ignoring non project dependent event"
                                       " %s" % event['id'])
                     self._updateLastEventId(event['id'])
