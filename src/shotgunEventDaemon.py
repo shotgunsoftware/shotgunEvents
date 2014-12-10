@@ -40,6 +40,7 @@ import types
 import traceback
 
 from distutils.version import StrictVersion
+from optparse import OptionParser, OptionGroup
 
 try:
     import cPickle as pickle
@@ -1256,114 +1257,78 @@ def main():
     """
     Main entry
     """
-    action = None
-    eventIds = None
-    configDirectory = None
-    if CURRENT_PYTHON_VERSION < PYTHON_25:
-        print "This version does not support python version prior to 2.5"
-        exit(3)
-    elif CURRENT_PYTHON_VERSION < PYTHON_27:
-        from optparse import OptionParser, OptionGroup
-        usage = "Usage: %prog [options] action\n"
-        usage += "Actions:\n"
-        usage += "\tstart                         start the event loop (daemon)\n"
-        usage += "\tstop                          stop the event loop (daemon)\n"
-        usage += "\tforeground                    start the event loop in foreground\n"
-        usage += "\tforceEvents eventId [eventId] Force a list of events\n"
-        usage += "Options:\n"
-        usage += "\t-c --configDirectory          Custom directory to load config file from\n"
+    usage = "Usage: %prog [options] action\n"
+    usage += "Actions:\n"
+    usage += "\tstart                         start the event loop (daemon)\n"
+    usage += "\tstop                          stop the event loop (daemon)\n"
+    usage += "\tforeground                    start the event loop in foreground\n"
+    usage += "\tforceEvents eventId [eventId] Force a list of events\n"
+    usage += "Options:\n"
+    usage += "\t-c --configDirectory          Custom directory to load config file from\n"
 
-        parser = OptionParser(usage=usage)
-        parser.add_option("-c", "--configDirectory",
-                          metavar='CONFIGDIR',
-                          type='string',
-                          help='Custom directory to load config file from')
+    parser = OptionParser(usage=usage)
+    parser.add_option("-c", "--configDirectory",
+                      metavar='CONFIGDIR',
+                      type='string',
+                      help='Custom directory to load config file from')
 
-        (options, args) = parser.parse_args()
+    (options, args) = parser.parse_args()
 
-        if len(args) < 1:
-            parser.print_usage()
-            exit(-1)
+    if len(args) < 1:
+        parser.print_usage()
+        return(-1)
 
-        action = args[0]
+    action = args[0]
 
-        if action not in ACTIONS:
-            parser.print_usage()
-            exit(-2)
+    # This solution is not perfect as in _getConfigPath the script path
+    # might be added in first position in the list if directories to look at
+    # Therefore, if there is a config file within the directory of the script,
+    # it will be used.
+    if options.configDirectory is not None:
+        CONFIG_DIRECTORIES[:0] = [options.configDirectory]
 
-        if action == 'forceEvents':
-            if len(args) < 2:
-                print "At least one event id should be passed.\n"
-                parser.print_usage()
-                exit(-3)
+    if action not in ACTIONS:
+        parser.print_usage()
+        return -2
 
-            eventIds = []
-            for eventId in args[1:]:
-                try:
-                    eventId = int(eventId)
-                except ValueError:
-                    print "EventId %s is not valid.\n" % eventId
-                    parser.print_usage()
-                    exit(-4)
-                eventIds.append(eventId)
+    # Windows platform
+    #
+    if sys.platform == 'win32':
+        if action not in ['foreground', 'forceEvents']:
+            win32serviceutil.HandleCommandLine(WindowsService)
+            return 0
         else:
-            if len(args) > 1:
-                print "Only one command should be passed.\n"
-                parser.print_usage()
-                exit(-5)
+            print("Action %s is not supported on windows." % action)
+            return -6
 
-        configDirectory = options.configDirectory
-    else:
-        import argparse
-        
-        parser = argparse.ArgumentParser(description='Shotgun Event Loop')
-
-        parser.add_argument('-cd', '--configDirectory',
-                            metavar='CONFIGDIRECTORY',
-                            type=str,
-                            required=False,
-                            help='Custom directory to load config file from')
-
-        subparsers = parser.add_subparsers(title='Actions',
-                                           description='Actions handled',
-                                           dest='action',
-                                           help='')
-
-        parserStart = subparsers.add_parser('start',
-                                            help='start the event loop (daemon)')
-        parserStop = subparsers.add_parser('stop',
-                                           help='stop the event loop (daemon)')
-        parserForeground = subparsers.add_parser('foreground',
-                                                 help='start the event loop in foreground')
-        parserForceEvents = subparsers.add_parser('forceEvents',
-                                                  help='Force a list of events')
-        parserForceEvents.add_argument('eventIds',
-                                       metavar='EVENTID',
-                                       type=int,
-                                       nargs='+',
-                                       default=[],
-                                       help='Event ids to force processing')
-
-        args = parser.parse_args()
-        action = args.action
-        if hasattr(args, 'eventIds'):
-            eventIds = args.eventIds
-        if hasattr(args, 'configDirectory'):
-            configDirectory = args.configDirectory
-
-    if configDirectory is not None:
-        CONFIG_DIRECTORIES[:0] = [configDirectory]
- 
-    if sys.platform == 'win32' and action not in ['foreground', 'forceEvents']:
-        win32serviceutil.HandleCommandLine(WindowsService)
-        return 0
-
+    # Unix-like platform
+    #
     daemon = LinuxDaemon()
-
     if action == 'forceEvents':
+        if len(args) < 2:
+            print("At least one event id should be passed.\n")
+            parser.print_usage()
+            return -3
+
+        eventIds = []
+        # Check eventIds validity
+        for eventId in args[1:]:
+            try:
+                eventId = int(eventId)
+            except ValueError:
+                print("EventId %s is not valid. Aborting.\n" % eventId)
+                parser.print_usage()
+                return -4
+            eventIds.append(eventId)
+        # Process them
         for eventId in eventIds:
             daemon._engine._runSingleEvent(eventId)
         return 0
+    else:
+        if len(args) > 1:
+            print("Only one command should be passed.\n")
+            parser.print_usage()
+            return -5
 
     # Find the function to call on the daemon and call it
     func = getattr(daemon, action, None)
