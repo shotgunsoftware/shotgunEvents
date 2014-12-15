@@ -16,8 +16,6 @@ import logging
 from optparse import OptionParser
 from pprint import pprint
 
-sys.path.insert(0, '/datas/jbro/packages/mikrosAnim/shotgunEvents/dev/shotgunEvents/src')
-
 import shotgun_api3 as shotgun
 
 from shotgunEventDaemon import Config
@@ -32,6 +30,7 @@ def main():
     (options, args) = parser.parse_args()
 
     if len(args) < 1:
+        print('Missing config file.')
         parser.print_usage()
         return -1
 
