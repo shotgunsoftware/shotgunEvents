@@ -63,8 +63,14 @@ def registerCallbacks(reg):
     reg.registerCallback( settings['script_name'], settings['script_key'], entityEventCB, eventFilter, settings )
 
     # Get a list of all the existing plugins from Shotgun
+    # (Get only project dependent plugins if project filtering has been enabled)
+    plugins = None
     sgHandle = sg.Shotgun( reg.getEngine().config.getShotgunURL(), settings['script_name'], settings['script_key'] )
-    plugins = sgHandle.find( settings['sgEntity'], [], ['sg_script_path', 'sg_status_list', 'sg_ignore_projects'] )
+    if cfg.getEnableProjectFiltering():
+        sgProjects = sgHandle.find( 'Project', ['name', 'in', cfg.getProjectNames()], [] )
+        plugins = sgHandle.find( settings['sgEntity'], ['project', 'in', sgProjects], ['sg_script_path', 'sg_status_list', 'sg_ignore_projects'] )
+    else:
+        plugins = sgHandle.find( settings['sgEntity'], [], ['sg_script_path', 'sg_status_list', 'sg_ignore_projects'] )
     reg.logger.debug( "Plugins : %s", plugins )
     for p in plugins :
         if p['sg_script_path'] and p['sg_script_path']['local_path'] and p['sg_status_list'] == 'act'  and os.path.isfile( p['sg_script_path']['local_path'] ) :
