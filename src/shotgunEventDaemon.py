@@ -1317,7 +1317,7 @@ def main():
 
     if len(args) < 1:
         parser.print_usage()
-        return(-1)
+        return -1
 
     action = args[0]
 
