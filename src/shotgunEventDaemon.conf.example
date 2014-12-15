@@ -111,3 +111,28 @@ to: you@yourdomain.com
 # An email subject prefix that can be used by mail clients to help sort out
 # alerts sent by the Shotgun event framework.
 subject: [SG]
+
+
+[project]
+# Project configuration. These is used to allow using multiple shotgun
+# loop daemons for multiple projects on the same shotgun site.
+#
+# One event loop should be the master and be the only one to handle
+# non project dependent events besides other project events.
+#
+# Others event loops might handle events from one or several
+# projects
+#
+# As of today, the plugin manager does not work well with
+# This configuration.
+
+# Enable project filtering
+enableProjectFiltering: True
+
+# Projects from which events shall be treated
+# (separated by comma without extra spacing)
+projectNames: Project01,Project Test
+
+# Does the event loop should treat non project dependent
+# events?
+treatNonProjectEvents: True
