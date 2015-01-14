@@ -867,8 +867,12 @@ class Callback(object):
 
         if 'project' in event and event['project'] is not None:
             project_name = event['project'].get('name')
-            if project_name not in limit_to_projects or project_name in ignore_projects:
-                msg = 'Skipping event {0}. Excluded by engine configuration for project: {1}'
+            if limit_to_projects and project_name not in limit_to_projects:
+                msg = "Skipping event {0}. Ignored by engine configuration 'limit_to_projects' for project: {1}"
+                self._logger.debug(msg.format(event['id'], project_name))
+                return False
+            if project_name in ignore_projects:
+                msg = "Skipping event {0}. Ignored by engine configuration 'ignore_projects' for project: {1}"
                 self._logger.debug(msg.format(event['id'], project_name))
                 return False
 
