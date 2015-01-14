@@ -368,6 +368,8 @@ class Engine(object):
                         self.log.debug('Read last event id (%d) from file.', lastEventId)
                         for collection in self._pluginCollections:
                             collection.setState(lastEventId)
+                except EOFError:
+                    print "EOFERROR in pickle.load occured", fh.read()
                 fh.close()
             except OSError, err:
                 raise EventDaemonError('Could not load event id from file.\n\n%s' % traceback.format_exc(err))
@@ -452,35 +454,6 @@ class Engine(object):
 
         if nextEventId is not None:
             filters = [['id', 'greater_than', nextEventId - 1]]
-            limit_to_projects = self.config.getEngineLimitToProjects()
-            projects = []
-            for project_name in limit_to_projects:
-                project = self._sg.find('Project', [['name', 'is', project_name]], ['id'])
-                if len(project) > 1:
-                    self.log.warning(("Multiple Projects with same name '{0}' "
-                                      "found and added to the list.").format(project_name))
-                if len(project) < 1:
-                    self.log.error("No Project with name '{0}' found. Not added.".format(project_name))
-
-                [projects.append(['project', 'is', {'type': 'Project', 'id': p['id']}]) for p in project]
-
-            ignore_projects = self.config.getEngineIgnoreProjects()
-            for project_name in ignore_projects:
-                project = self._sg.find('Project', [['name', 'is', project_name]], ['id'])
-                if len(project) > 1:
-                    self.log.warning(("Multiple Projects with same name '{0}' "
-                                      "found and added to the list.").format(project_name))
-                if len(project) < 1:
-                    self.log.error("No Project with name '{0}' found. Not added.".format(project_name))
-
-                [projects.append(['project', 'is_not', {'type': 'Project', 'id': p['id']}]) for p in project]
-
-
-            if projects:
-                project_filters = {'filter_operator': 'any',
-                                   'filters': projects}
-                filters.append(project_filters)
-
             fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid']
             order = [{'column':'id', 'direction':'asc'}]
 
@@ -888,6 +861,17 @@ class Callback(object):
         self._logger.config = self._engine.config
 
     def canProcess(self, event):
+
+        limit_to_projects = self._engine.config.getEngineLimitToProjects()
+        ignore_projects = self._engine.config.getEngineIgnoreProjects()
+
+        if 'project' in event and event['project'] is not None:
+            project_name = event['project'].get('name')
+            if project_name not in limit_to_projects or project_name in ignore_projects:
+                msg = 'Skipping event {0}. Excluded by engine configuration for project: {1}'
+                self._logger.debug(msg.format(event['id'], project_name))
+                return False
+
         if not self._matchEvents:
             return True
 
