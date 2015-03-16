@@ -133,6 +133,18 @@ def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject,
         logger.addHandler(mailHandler)
 
 
+def resolveEnv(path):
+    """
+    Resolve environmeent variables in path if possible
+
+    @param path: The path to resolve
+    @type path: str
+    @return: The resolved path
+    @rtype: str
+    """
+    return os.path.sep.join([folder if not folder[0] == '$' else os.environ.get(folder[1:], folder)
+                             for folder in path.split(os.path.sep)])
+
 class Config(ConfigParser.ConfigParser):
     def __init__(self, path):
         ConfigParser.ConfigParser.__init__(self)
@@ -148,13 +160,13 @@ class Config(ConfigParser.ConfigParser):
         return self.get('shotgun', 'key')
 
     def getEventIdFile(self):
-        return self.get('daemon', 'eventIdFile')
+        return resolveEnv(self.get('daemon', 'eventIdFile'))
 
     def getEnginePIDFile(self):
-        return self.get('daemon', 'pidFile')
+        return resolveEnv(self.get('daemon', 'pidFile'))
 
     def getPluginPaths(self):
-        return [s.strip() for s in self.get('plugins', 'paths').split(',')]
+        return [resolveEnv(s.strip()) for s in self.get('plugins', 'paths').split(',')]
 
     def getSMTPServer(self):
         if self.has_option('emails', 'server'):
@@ -209,12 +221,12 @@ class Config(ConfigParser.ConfigParser):
     def getLogFile(self, filename=None):
         if filename is None:
             if self.has_option('daemon', 'logFile'):
-                filename = self.get('daemon', 'logFile')
+                filename = resolveEnv(self.get('daemon', 'logFile'))
             else:
                 raise ConfigError('The config file has no logFile option.')
 
         if self.has_option('daemon', 'logPath'):
-            path = self.get('daemon', 'logPath')
+            path = resolveEnv(self.get('daemon', 'logPath'))
 
             if not os.path.exists(path):
                 os.makedirs(path)

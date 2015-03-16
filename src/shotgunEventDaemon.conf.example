@@ -80,7 +80,7 @@ use_session_uuid: True
 
 # A comma delimited list of paths where the framework should look for plugins to
 # load.
-paths: /usr/local/shotgun/plugins
+paths: /usr/local/shotgun/plugins/vfx
 
 
 [emails]
