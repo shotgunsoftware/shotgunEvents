@@ -142,7 +142,7 @@ def resolveEnv(path):
     @return: The resolved path
     @rtype: str
     """
-    return os.path.sep.join([folder if not folder[0] == '$' else os.environ.get(folder[1:], folder)
+    return os.path.sep.join([folder if (not folder or not folder[0] == '$') else os.environ.get(folder[1:], folder)
                              for folder in path.split(os.path.sep)])
 
 class Config(ConfigParser.ConfigParser):
