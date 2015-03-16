@@ -8,5 +8,3 @@ build/
 *~
 .aliases
 docs/_build/
-log/*
-ids/*
