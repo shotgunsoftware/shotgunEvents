@@ -75,8 +75,11 @@ class Daemon(object):
         pid = str(os.getpid())
         file(self._pidfile,'w+').write("%s\n" % pid)
         if os.path.exists('/var/lock/subsys'):
-            fh = open(os.path.join('/var/lock/subsys', self._serviceName), 'w')
-            fh.close()
+            try:
+                fh = open(os.path.join('/var/lock/subsys', self._serviceName), 'w')
+                fh.close()
+            except IOError:
+                print("Couldn't write to /var/lock/subsys")
     
     def _delpid(self):
         if os.path.exists(self._pidfile):
