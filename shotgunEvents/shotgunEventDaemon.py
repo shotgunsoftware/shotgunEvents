@@ -31,16 +31,16 @@ import datetime
 import imp
 import logging
 import logging.handlers
-import os
 import pprint
 import socket
 import sys
 import time
-import types
 import traceback
-
 from distutils.version import StrictVersion
-from optparse import OptionParser, OptionGroup
+from optparse import OptionParser
+
+import os
+
 
 try:
     import cPickle as pickle
@@ -53,7 +53,7 @@ if sys.platform == 'win32':
     import win32event
     import servicemanager
 
-import daemonizer
+from shotgunEvents import daemonizer
 import shotgun_api3 as sg
 
 
