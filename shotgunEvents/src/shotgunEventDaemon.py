@@ -53,7 +53,7 @@ if sys.platform == 'win32':
     import win32event
     import servicemanager
 
-from shotgunEvents import daemonizer
+import daemonizer
 import shotgun_api3 as sg
 
 
