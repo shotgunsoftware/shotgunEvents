@@ -1,9 +1,9 @@
 name = 'shotgunEvent'
-version = '0.1.1'
+version = '0.1.2'
 
-requires = ['shotgunPythonApi', 'shotgunEventPlugins']
+requires = ['shotgunPythonApi']
 
 def commands():
 
     env.PYTHONPATH.append(this.root)
-    alias('sgDaemon', 'python {root}/src/shotgunEventDaemon.py')
+    alias('sgDaemon', 'python {root}/shotgunEvents/src/shotgunEventDaemon.py')
