@@ -594,6 +594,11 @@ class Engine(object):
         eventIdFile = self.config.getEventIdFile()
 
         if eventIdFile is not None:
+
+            idDir = os.path.dirname(eventIdFile)
+            if not os.path.isdir(idDir):
+                os.makedirs(idDir)
+
             for collection in self._pluginCollections:
                 self._eventIdData[collection.path] = collection.getState()
 
