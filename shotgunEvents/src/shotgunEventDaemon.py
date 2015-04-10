@@ -557,7 +557,7 @@ class Engine(object):
 
         if nextEventId is not None:
             filters = [['id', 'greater_than', nextEventId - 1]]
-            fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid']
+            fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'description', 'session_uuid']
             order = [{'column':'id', 'direction':'asc'}]
     
             conn_attempts = 0
