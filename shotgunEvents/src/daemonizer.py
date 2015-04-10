@@ -60,7 +60,18 @@ class Daemon(object):
         except OSError, e:
             sys.stderr.write("fork #2 failed: %d (%s)\n" % (e.errno, e.strerror))
             sys.exit(1)
-        
+
+        # write pidfile and subsys file
+        pid = str(os.getpid())
+
+        file(self._pidfile,'w+').write("%s\n" % pid)
+        if os.path.exists('/var/lock/subsys'):
+            try:
+                fh = open(os.path.join('/var/lock/subsys', self._serviceName), 'w')
+                fh.close()
+            except IOError:
+                print("Couldn't write to /var/lock/subsys")
+
         # redirect standard file descriptors
         sys.stdout.flush()
         sys.stderr.flush()
@@ -70,16 +81,7 @@ class Daemon(object):
         os.dup2(si.fileno(), sys.stdin.fileno())
         os.dup2(so.fileno(), sys.stdout.fileno())
         os.dup2(se.fileno(), sys.stderr.fileno())
-        
-        # write pidfile and subsys file
-        pid = str(os.getpid())
-        file(self._pidfile,'w+').write("%s\n" % pid)
-        if os.path.exists('/var/lock/subsys'):
-            try:
-                fh = open(os.path.join('/var/lock/subsys', self._serviceName), 'w')
-                fh.close()
-            except IOError:
-                print("Couldn't write to /var/lock/subsys")
+
     
     def _delpid(self):
         if os.path.exists(self._pidfile):
