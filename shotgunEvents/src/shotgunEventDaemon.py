@@ -271,6 +271,7 @@ class Engine(object):
         """
         self._continue = True
         self._eventIdData = {}
+        self.lastEventId = None
 
         # Read/parse the config
         self.config = Config(configPath)
@@ -551,7 +552,7 @@ class Engine(object):
         @rtype: I{list} of Shotgun event dictionaries.
         """
         nextEventId = None
-        for newId in [coll.getNextUnprocessedEventId() for coll in self._pluginCollections]:
+        for newId in [coll.getNextUnprocessedEventId(self.lastEventId) for coll in self._pluginCollections]:
             if newId is not None and (nextEventId is None or newId < nextEventId):
                 nextEventId = newId
 
@@ -565,10 +566,18 @@ class Engine(object):
                 try:
                     self.log.debug("Checking events from %d", nextEventId )
                     return self._sg.find("EventLogEntry", filters, fields, order, limit=self.config.getMaxEventBatchSize())
+                    nextEvents = self._sg.find("EventLogEntry", filters, fields, order, limit=self.config.getMaxEventBatchSize())
+                    if not nextEvents:
+                        return []
+                    self.lastEventId = nextEvents[-1]['id']
+                    return nextEvents
                     if events:
                         self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
                 except (sg.ProtocolError, sg.ResponseError, socket.error), err:
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
+                except IndexError as erro:
+                    self.log.debug("Event %s doesn't exist yet" % nextEventId)
+                    return []
                 except Exception, err:
                     msg = "Unknown error: %s" % str(err)
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
@@ -659,15 +668,17 @@ class PluginCollection(object):
             self._stateData[plugin.getName()] = plugin.getState()
         return self._stateData
 
-    def getNextUnprocessedEventId(self):
+    def getNextUnprocessedEventId(self, lastEventId):
         eId = None
         for plugin in self:
             if not plugin.isActive():
                 continue
 
             newId = plugin.getNextUnprocessedEventId()
-            if newId is not None and (eId is None or newId < eId):
+            if newId is not None and (lastEventId is None or newId > lastEventId):
                 eId = newId
+        if eId is None and lastEventId is not None:
+            return lastEventId+1
         return eId
 
     def process(self, event, forceEvent=False ):
@@ -1098,7 +1109,7 @@ class Callback(object):
 
         try:
             self._callback(self._shotgun, self._logger, event, self._args)
-        except:
+        except Exception as erro:
             # Get the local variables of the frame of our plugin
             tb = sys.exc_info()[2]
             stack = []
