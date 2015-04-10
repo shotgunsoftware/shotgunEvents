@@ -100,7 +100,8 @@ class Daemon(object):
             pf = file(self._pidfile,'r')
             pid = int(pf.read().strip())
             pf.close()
-        except IOError:
+        except IOError as erro:
+            # pid file doesn't exist yet
             pid = None
         
         if pid:
