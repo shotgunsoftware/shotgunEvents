@@ -1,0 +1,7 @@
+
+source /opt/rh/python27/enable
+source /s/apps/packages/bin/setRez 
+export PYTHONPATH="/s/apps/packages/mikros/env/rez/current/src"
+
+python2.7 /s/apps/packages/mikros/env/rez/current/bin/rez env shotgunEvents vfxSgEventPlugins-current -- 'source /opt/rh/python27/enable; sgDaemon -c $VFX_EVENT_PLUGINS_ROOT/config' $@
+
