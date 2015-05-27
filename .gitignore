@@ -1,3 +1,5 @@
+.idea/
+src/logs
 docs/_build/doctrees
 shotgunEventDaemon.conf
 plugins
