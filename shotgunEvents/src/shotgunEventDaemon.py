@@ -165,8 +165,23 @@ class Config(ConfigParser.ConfigParser):
     def getEnginePIDFile(self):
         return resolveEnv(self.get('daemon', 'pidFile'))
 
+    def getPluginCommonPath(self):
+      if self.has_option('plugins', 'common_path'):
+        return resolveEnv(self.get('plugins', 'common_path'))
+      return ''
+
     def getPluginPaths(self):
         return [resolveEnv(s.strip()) for s in self.get('plugins', 'paths').split(',')]
+
+    def getPluginBlacklist(self):
+      if self.has_option('plugins', 'blacklist'):
+        return [resolveEnv(s.strip()) for s in self.get('plugins', 'blacklist').split(',')]
+      return []
+
+    def getPluginWhitelist(self):
+      if self.has_option('plugins', 'whitelist'):
+        return [resolveEnv(s.strip()) for s in self.get('plugins', 'whitelist').split(',')]
+      return []
 
     def getSMTPServer(self):
         if self.has_option('emails', 'server'):
@@ -277,7 +292,11 @@ class Engine(object):
         self.config = Config(configPath)
 
         # Get config values
-        self._pluginCollections = [PluginCollection(self, s) for s in self.config.getPluginPaths()]
+        pluginCommonPath = self.config.getPluginCommonPath()
+        blacklistedPluginCollection = self.config.getPluginBlacklist()
+        whitelistedPluginCollection = self.config.getPluginWhitelist()
+        self._pluginCollections = [PluginCollection(self, s, pluginCommonPath, blacklistedPluginCollection, whitelistedPluginCollection) for s in self.config.getPluginPaths()]
+
         self._sg = sg.Shotgun(
             self.config.getShotgunURL(),
             self.config.getEngineScriptName(),
@@ -354,10 +373,10 @@ class Engine(object):
         """
         Return a plugin collection to handle the given path
         @param path : The path to return a collection for
-		@param autoDiscover : Should the collection check for new plugin and load them
-		@param ensureExists : Create the collection if it does not exist
+        @param autoDiscover : Should the collection check for new plugin and load them
+        @param ensureExists : Create the collection if it does not exist
         @return: A collection that will handle the path or None.
-        @rtype: L{PluginCollection}		 
+        @rtype: L{PluginCollection}         
         """
         # Check if we already have a plugin collection covering the directory path
         for pc in self._pluginCollections :
@@ -646,7 +665,7 @@ class PluginCollection(object):
     """
     A group of plugin files in a location on the disk.
     """
-    def __init__(self, engine, path):
+    def __init__(self, engine, path, commonPath='', blacklist=[], whitelist=[]):
         if not os.path.isdir(path):
             raise ValueError('Invalid path: %s' % path)
 
@@ -655,6 +674,9 @@ class PluginCollection(object):
         self._autoDiscover = True # Wether or not new plugins should automatically be discovered and loaded
         self._plugins = {}
         self._stateData = {}
+        self.commonPath = commonPath
+        self.blacklist = blacklist
+        self.whitelist = whitelist
 
     def setState(self, state):
         if isinstance(state, int):
@@ -705,20 +727,44 @@ class PluginCollection(object):
         - For any new plugins, load them, otherwise, refresh them.
         """
         newPlugins = {}
-
-        for basename in os.listdir(self.path):
+        
+        plugins = {}
+        listOfPath = [os.path.join(self.path, p) for p in os.listdir(self.path)]
+        if os.path.exists(self.commonPath):
+            listOfPath = listOfPath + [os.path.join(self.commonPath,p) for p in os.listdir(self.commonPath)]
+        for path in listOfPath:
+            basename = os.path.basename(path)
+            if basename in plugins:
+                plugins[basename].append(os.path.dirname(path))
+            else:
+                plugins[basename] = [os.path.dirname(path)]
+        
+        for basename,paths in plugins.items():
             if not basename.endswith('.py') or basename.startswith('.'):
+                continue 
+            if basename[:-3] in self.blacklist:
                 continue
-
-            if basename in self._plugins:
+            
+            if len(paths) > 1 :
+                if basename[:-3] in self.whitelist:
+                    if os.path.exists(self.commonPath):
+                        while self.commonPath in paths:
+                            paths.remove(self.commonPath)
+                        if paths:
+                            newPlugins[basename] = Plugin(self._engine, os.path.join(paths[0], basename))
+                    else:
+                        newPlugins[basename] = Plugin(self._engine, os.path.join(paths[0], basename))
+                else:
+                    newPlugins[basename] = Plugin(self._engine, os.path.join(self.commonPath, basename))
+            elif basename in self._plugins:
                 newPlugins[basename] = self._plugins[basename]
             elif self._autoDiscover :
-                newPlugins[basename] = Plugin(self._engine, os.path.join(self.path, basename))
-
+                newPlugins[basename] = Plugin(self._engine, os.path.join(paths[0], basename))
+                
             if basename in newPlugins :
                 newPlugins[basename].load()
-
-		#TODO : report something when plugins are gone missing
+        
+        #TODO : report something when plugins are gone missing
         self._plugins = newPlugins
 
     def getPlugin( self, file, ensureExists=True ) :
