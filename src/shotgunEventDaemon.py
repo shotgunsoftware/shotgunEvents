@@ -867,8 +867,6 @@ class Callback(object):
         @param shotgun: The Shotgun instance that will be used to communicate
             with your Shotgun server.
         @type shotgun: L{sg.Shotgun}
-        @param logger: An object to log messages with.
-        @type logger: I{logging.Logger}
         @param matchEvents: The event filter to match events against before invoking callback.
         @type matchEvents: dict
         @param args: Any datastructure you would like to be passed to your
