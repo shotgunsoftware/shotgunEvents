@@ -491,8 +491,8 @@ class Engine(object):
             while True:
                 try:
                     return self._sg.find("EventLogEntry", filters, fields, order, limit=self.config.getMaxEventBatchSize())
-                    if events:
-                        self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
+                    # if events:
+                    #     self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
                 except (sg.ProtocolError, sg.ResponseError, socket.error), err:
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
                 except Exception, err:
