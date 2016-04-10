@@ -143,6 +143,14 @@ class Config(ConfigParser.ConfigParser):
     def getEngineScriptKey(self):
         return self.get('shotgun', 'key')
 
+    def getEngineLimitToProjects(self):
+        project_list = [s.strip() for s in self.get('shotgun', 'limit_to_projects').split(',')]
+        return project_list if project_list[0] != '' else []
+
+    def getEngineIgnoreProjects(self):
+        project_list = [s.strip() for s in self.get('shotgun', 'ignore_projects').split(',')]
+        return project_list if project_list[0] != '' else []
+
     def getEventIdFile(self):
         return self.get('daemon', 'eventIdFile')
 
@@ -390,6 +398,8 @@ class Engine(object):
                         self.log.debug('Read last event id (%d) from file.', lastEventId)
                         for collection in self._pluginCollections:
                             collection.setState(lastEventId)
+                except EOFError:
+                    print "EOFERROR in pickle.load occured", fh.read()
                 fh.close()
             except OSError, err:
                 raise EventDaemonError('Could not load event id from file.\n\n%s' % traceback.format_exc(err))
@@ -486,13 +496,14 @@ class Engine(object):
             filters = [['id', 'greater_than', nextEventId - 1]]
             fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid', 'created_at']
             order = [{'column':'id', 'direction':'asc'}]
-    
+
             conn_attempts = 0
             while True:
                 try:
                     return self._sg.find("EventLogEntry", filters, fields, order, limit=self.config.getMaxEventBatchSize())
-                    if events:
-                        self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
+                    # This gets never fired as the function returns previously
+                    # if events:
+                    #     self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
                 except (sg.ProtocolError, sg.ResponseError, socket.error), err:
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
                 except Exception, err:
@@ -903,6 +914,21 @@ class Callback(object):
         self._logger.config = self._engine.config
 
     def canProcess(self, event):
+
+        limit_to_projects = self._engine.config.getEngineLimitToProjects()
+        ignore_projects = self._engine.config.getEngineIgnoreProjects()
+
+        if 'project' in event and event['project'] is not None:
+            project_name = event['project'].get('name')
+            if limit_to_projects and project_name not in limit_to_projects:
+                msg = "Skipping event {0}. Ignored by engine configuration 'limit_to_projects' for project: {1}"
+                self._logger.debug(msg.format(event['id'], project_name))
+                return False
+            if project_name in ignore_projects:
+                msg = "Skipping event {0}. Ignored by engine configuration 'ignore_projects' for project: {1}"
+                self._logger.debug(msg.format(event['id'], project_name))
+                return False
+
         if not self._matchEvents:
             return True
 
