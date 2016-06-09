@@ -36,6 +36,7 @@ import socket
 import sys
 import time
 import traceback
+import copy
 from distutils.version import StrictVersion
 from optparse import OptionParser
 
@@ -577,7 +578,7 @@ class Engine(object):
 
         if nextEventId is not None:
             filters = [['id', 'greater_than', nextEventId - 1]]
-            fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'description', 'session_uuid']
+            fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'description', 'session_uuid', 'created_at']
             order = [{'column':'id', 'direction':'asc'}]
     
             conn_attempts = 0
@@ -625,7 +626,20 @@ class Engine(object):
                 if state:
                     try:
                         fh = open(eventIdFile, 'w')
-                        pickle.dump(self._eventIdData, fh)
+
+                        # cleanup timestamp from data for it to be pickled
+                        # self._eventIdData is a dict of dict of tuple of dict, hence the following mess
+                        cleanData = copy.deepcopy(self._eventIdData)
+                        for path, _dict in cleanData.iteritems():
+                            for plugin, plugintuple in _dict.iteritems():
+                                for item in plugintuple:
+                                    if isinstance(item, dict):
+                                        for k, v in item.iteritems():
+                                            if isinstance(v, datetime.datetime):
+                                                v = v.astimezone(sg.sg_timezone.utc)
+                                                v = v.replace(tzinfo=None)
+                                                item[k] = v
+                        pickle.dump(cleanData, fh)
                         fh.close()
                     except OSError, err:
                         self.log.error('Can not write event id data to %s.\n\n%s', eventIdFile, traceback.format_exc(err))
@@ -953,27 +967,27 @@ class Plugin(object):
                 if not self._engine.treatNonProjectEvents:
                     self.logger.debug("Ignoring non project dependent event"
                                       " %s" % event['id'])
-                    self._updateLastEventId(event['id'])
+                    self._updateLastEventId(event['id'], event['created_at'])
                     return self._active
 
             elif event['project']['name'] not in self._engine.projectsToFilter:
                 self.logger.debug("Ignoring event %s from project"
                                   " %s" % (event['id'],
                                            event['project']['name']))
-                self._updateLastEventId(event['id'])
+                self._updateLastEventId(event['id'], event['created_at'])
                 return self._active
 
         if event['id'] in self._backlog:
             if self._process(event):
                 self.logger.info('Processed id %d from backlog.' % event['id'])
                 del(self._backlog[event['id']])
-                self._updateLastEventId(event['id'])
+                self._updateLastEventId(event['id'], event['created_at'])
         elif self._lastEventId is not None and event['id'] <= self._lastEventId:
             msg = 'Event %d is too old. Last event processed was (%d).'
             self.logger.debug(msg, event['id'], self._lastEventId)
         else:
             if self._process(event):
-                self._updateLastEventId(event['id'])
+                self._updateLastEventId(event['id'], event['created_at'])
 
         return self._active
 
@@ -994,9 +1008,9 @@ class Plugin(object):
 
         return self._active
 
-    def _updateLastEventId(self, eventId):
+    def _updateLastEventId(self, eventId, eventCreationDate):
         if self._lastEventId is not None and eventId > self._lastEventId + 1:
-            expiration = datetime.datetime.now() + datetime.timedelta(minutes=5)
+            expiration = eventCreationDate + datetime.timedelta(minutes=5)
             for skippedId in range(self._lastEventId + 1, eventId):
                 self.logger.info('Adding event id %d to backlog.', skippedId)
                 self._backlog[skippedId] = expiration
