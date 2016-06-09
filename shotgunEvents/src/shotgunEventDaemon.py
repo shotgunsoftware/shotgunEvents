@@ -612,6 +612,7 @@ class Engine(object):
         this location to know at which event it should start processing.
         """
         eventIdFile = self.config.getEventIdFile()
+        tmpEventIdFile = os.path.join(os.path.dirname(eventIdFile), ".%s" % os.path.basename(eventIdFile))
 
         if eventIdFile is not None:
 
@@ -625,7 +626,7 @@ class Engine(object):
             for colPath, state in self._eventIdData.items():
                 if state:
                     try:
-                        fh = open(eventIdFile, 'w')
+                        fh = open(tmpEventIdFile, 'w')
 
                         # cleanup timestamp from data for it to be pickled
                         # self._eventIdData is a dict of dict of tuple of dict, hence the following mess
@@ -641,11 +642,19 @@ class Engine(object):
                                                 item[k] = v
                         pickle.dump(cleanData, fh)
                         fh.close()
+
                     except OSError, err:
-                        self.log.error('Can not write event id data to %s.\n\n%s', eventIdFile, traceback.format_exc(err))
+                        self.log.error('Can not write event id data to %s.\n\n%s', tmpEventIdFile, traceback.format_exc(err))
+
+                    else:
+                        # file was properly pickled at the temporary location, now override the
+                        # last state with this new one
+                        os.rename(tmpEventIdFile, eventIdFile)
+
                     break
             else:
                 self.log.warning('No state was found. Not saving to disk.')
+                return
 
     def _checkConnectionAttempts(self, conn_attempts, msg):
         conn_attempts += 1
