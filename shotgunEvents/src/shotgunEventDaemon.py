@@ -1480,8 +1480,14 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
 
     def getSubject(self, record):
         subject = logging.handlers.SMTPHandler.getSubject(self, record)
+
+        hostname = socket.gethostname()
+        if hostname:
+            subject += '[%s]' % hostname
+
         if record.levelno in self.LEVEL_SUBJECTS:
             return subject + ' ' + self.LEVEL_SUBJECTS[record.levelno]
+
         return subject
 
     def emit(self, record):
