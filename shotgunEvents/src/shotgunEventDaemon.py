@@ -276,6 +276,16 @@ class Config(ConfigParser.ConfigParser):
                 return self.getboolean('project', 'treatNonProjectEvents') or False
         return False
 
+    def getBacklogTimeout(self):
+        if self.has_option('daemon', 'backlog_timeout'):
+            return self.getint('daemon', 'backlog_timeout')
+        return 60
+
+    def reprocessOnBacklog(self):
+        if self.has_option('daemon', 'reprocess_on_backlog'):
+            return self.getboolean('daemon', 'reprocess_on_backlog') or False
+        return False
+
 
 class Engine(object):
     """
@@ -542,6 +552,9 @@ class Engine(object):
         """
         self.log.debug('Starting the event processing loop.')
         while self._continue:
+
+            self._processNewBacklogs()
+
             # Process events
             for event in self._getNewEvents():
                 self.log.debug( "Processing %s", event['id'] )
@@ -563,6 +576,52 @@ class Engine(object):
     def stop(self):
         self._continue = False
 
+    def _processNewBacklogs(self):
+        backlogs = set()
+        for collection in self._pluginCollections:
+            backlogs |= collection.getCleanBacklogIds()
+
+        if len(backlogs) == 0:
+            return
+
+        self.log.debug("Checking for %d backlog creation", len(backlogs))
+
+        backlogEvents = self._fetchEventLogEntries(filters=[['id', 'in', list(backlogs)]],
+                                                   order=[{'column':'id', 'direction':'asc'}])
+
+        if nextEvents:
+            self.log.info('> Found %d backlogs!', len(backlogEvents))
+
+            foundBacklogs = [e['id'] for e in backlogEvents]
+
+            # case 1: we want to reprocess everything
+            #   > we reset every plugins state to match
+            if self.config.reprocessOnBacklog():
+                for collection in self._pluginCollections:
+                    for plugin in collection:
+                        plugin.log.debug('Rolling back events from %d to %d'
+                                             % (plugin._lastEventId, foundBacklogs[0]-1))
+
+                        plugin._backlog -= foundBacklogs  # remove every found event from the plugin backlog
+                        plugin._lastEventId = foundBacklogs[0] - 1  # reset the last event to be the first found backlog
+
+            # case 2: we dont want to reprocess events
+            #   > we only process backlogs in order
+            else:
+                for collection in self._pluginCollections:
+                    collection.process(event)  # backlog array should be taken care off by the plugin's process
+
+        else:
+            self.log.debug('> No backlog created.')
+
+
+        if event['id'] in self._backlog:
+            if self._process(event):
+                self.logger.info('Processed id %d from backlog.' % event['id'])
+                del(self._backlog[event['id']])
+                self._updateLastEventId(event['id'], event['created_at'])
+
+
     def _getNewEvents(self):
         """
         Fetch new events from Shotgun.
@@ -570,34 +629,43 @@ class Engine(object):
         @return: Recent events that need to be processed by the engine.
         @rtype: I{list} of Shotgun event dictionaries.
         """
-        nextEventId = None
-        for newId in [coll.getNextUnprocessedEventId() for coll in self._pluginCollections]:
-            if newId is not None and (nextEventId is None or newId < nextEventId):
-                nextEventId = newId
+        nextEventId = min([coll.getNextUnprocessedEventId() or -1 for coll in self._pluginCollections])
 
-        if nextEventId is not None:
+        if nextEventId != -1:
             filters = [['id', 'greater_than', nextEventId - 1]]
             fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'description', 'session_uuid', 'created_at']
             order = [{'column':'id', 'direction':'asc'}]
-    
-            conn_attempts = 0
-            while True:
-                try:
-                    self.log.debug("Checking events from %d", nextEventId)
-                    nextEvents = self._sg.find("EventLogEntry", filters, fields, order, limit=self.config.getMaxEventBatchSize())
-                    if nextEvents:
-                        self.log.debug('Got %d events: %d to %d.', len(nextEvents), nextEvents[0]['id'], nextEvents[-1]['id'])
-                    return nextEvents
-                except (sg.ProtocolError, sg.ResponseError, socket.error), err:
-                    conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
-                except IndexError as erro:
-                    self.log.debug("Event %s doesn't exist yet" % nextEventId)
-                    return []
-                except Exception, err:
-                    msg = "Unknown error: %s" % str(err)
-                    conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
+
+            self.log.debug("Checking events from %d", nextEventId)
+
+            nextEvents = self._fetchEventLogEntries(filters, fields, order, limit=self.config.getMaxEventBatchSize())
+
+            if nextEvents:
+                self.log.debug('> %d events: %d to %d.', len(nextEvents), nextEvents[0]['id'], nextEvents[-1]['id'])
+            else:
+                self.log.debug('> No events.')
+
+            return nextEvents
 
         return []
+
+
+    def _fetchEventLogEntries(self, filters, fields=['id'], order=[], limit=0):
+        conn_attempts = 0
+        while True:
+            try:
+                return self._sg.find("EventLogEntry", filters, fields, order, limit=limit)
+            except (sg.ProtocolError, sg.ResponseError, socket.error), err:
+                conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
+            except IndexError as erro:
+                self.log.debug("Event %s doesn't exist yet" % nextEventId)
+                return []
+            except Exception, err:
+                msg = "Unknown error: %s" % str(err)
+                conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
+
+        return []
+
 
     def _saveEventIdData(self):
         """
@@ -726,11 +794,17 @@ class PluginCollection(object):
             return lastEventId+1
         return eId
 
+    def getCleanBacklogIds(self):
+        backlogs = set()
+        for plugin in self:
+            backlogs |= plugin.getCleanBacklogIds()
+        return backlogs
+
     def process(self, event, forceEvent=False ):
         for plugin in self:
             if plugin.isActive():
-                plugin.logger.debug( "Checking event %d", event['id'])
-                plugin.process(event, forceEvent )
+                plugin.logger.debug("Checking event %d", event['id'])
+                plugin.process(event, forceEvent)
             else:
                 plugin.logger.debug('Skipping: inactive.')
 
@@ -867,20 +941,19 @@ class Plugin(object):
 
     def getNextUnprocessedEventId(self):
         if self._lastEventId:
-            nextId = self._lastEventId + 1
+            return self._lastEventId + 1
         else:
-            nextId = None
+            return None
 
+    def getCleanBacklogIds(self):
         now = datetime.datetime.now()
         for k in self._backlog.keys():
             v = self._backlog[k]
             if v < now:
                 self.logger.warning('Timeout elapsed on backlog event id %d.', k)
                 del(self._backlog[k])
-            elif nextId is None or k < nextId:
-                nextId = k
 
-        return nextId
+        return set(self._backlog.keys())
 
     def isActive(self):
         """
@@ -958,7 +1031,7 @@ class Plugin(object):
         sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey)
         self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args, stopOnError))
 
-    def process(self, event, forceEvent=False ):
+    def process(self, event, forceEvent=False):
         self.logger.debug( "Processing %s", event['id'] )
 
         if forceEvent : # Perform a raw process of the event
@@ -1014,7 +1087,7 @@ class Plugin(object):
 
     def _updateLastEventId(self, eventId, eventCreationDate):
         if self._lastEventId is not None and eventId > self._lastEventId + 1:
-            expiration = eventCreationDate + datetime.timedelta(minutes=5)
+            expiration = eventCreationDate + datetime.timedelta(seconds=self._engine.config.getBacklogTimeout())
             for skippedId in range(self._lastEventId + 1, eventId):
                 self.logger.info('Adding event id %d to backlog.', skippedId)
                 self._backlog[skippedId] = expiration
