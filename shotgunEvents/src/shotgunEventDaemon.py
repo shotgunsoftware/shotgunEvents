@@ -589,7 +589,7 @@ class Engine(object):
         backlogEvents = self._fetchEventLogEntries(filters=[['id', 'in', list(backlogs)]],
                                                    order=[{'column':'id', 'direction':'asc'}])
 
-        if nextEvents:
+        if backlogEvents:
             self.log.info('> Found %d backlogs!', len(backlogEvents))
 
             foundBacklogs = [e['id'] for e in backlogEvents]
@@ -602,25 +602,27 @@ class Engine(object):
                         plugin.log.debug('Rolling back events from %d to %d'
                                              % (plugin._lastEventId, foundBacklogs[0]-1))
 
-                        plugin._backlog -= foundBacklogs  # remove every found event from the plugin backlog
-                        plugin._lastEventId = foundBacklogs[0] - 1  # reset the last event to be the first found backlog
+                        # remove every found event from the plugin backlog
+                        for toremove in set(plugin._backlog.keys()) & foundBacklogs:
+                            del(plugin._backlog[toremove])
+
+                        # reset the last event to be the first found backlog
+                        plugin._lastEventId = foundBacklogs[0] - 1
 
             # case 2: we dont want to reprocess events
-            #   > we only process backlogs in order
+            #   > we only process backlogs in order: fetch all infos from the events & process them
             else:
+                fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'description', 'session_uuid', 'created_at']
+
+                backlogEvents = self._fetchEventLogEntries(filters=[['id', 'in', list(backlogs)]],
+                                                           fields=fields,
+                                                           order=[{'column':'id', 'direction':'asc'}])
                 for collection in self._pluginCollections:
-                    collection.process(event)  # backlog array should be taken care off by the plugin's process
+                    for event in backlogEvents:
+                        collection.process(event)  # backlog array should be taken care off by the plugin's process
 
         else:
             self.log.debug('> No backlog created.')
-
-
-        if event['id'] in self._backlog:
-            if self._process(event):
-                self.logger.info('Processed id %d from backlog.' % event['id'])
-                del(self._backlog[event['id']])
-                self._updateLastEventId(event['id'], event['created_at'])
-
 
     def _getNewEvents(self):
         """
@@ -639,6 +641,9 @@ class Engine(object):
             self.log.debug("Checking events from %d", nextEventId)
 
             nextEvents = self._fetchEventLogEntries(filters, fields, order, limit=self.config.getMaxEventBatchSize())
+
+            # debug: fake drop of an event
+            # nextEvents = filter(lambda ev: ev['id'] != 9808246, nextEvents)
 
             if nextEvents:
                 self.log.debug('> %d events: %d to %d.', len(nextEvents), nextEvents[0]['id'], nextEvents[-1]['id'])
@@ -700,7 +705,7 @@ class Engine(object):
                                     if isinstance(item, dict):
                                         for k, v in item.iteritems():
                                             if isinstance(v, datetime.datetime):
-                                                v = v.astimezone(sg.sg_timezone.utc)
+                                                v = v.astimezone(sg.sg_timezone.local)
                                                 v = v.replace(tzinfo=None)
                                                 item[k] = v
                         pickle.dump(cleanData, fh)
