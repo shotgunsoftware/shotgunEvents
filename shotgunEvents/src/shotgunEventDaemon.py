@@ -556,13 +556,16 @@ class Engine(object):
             self._processNewBacklogs()
 
             # Process events
-            for event in self._getNewEvents():
+            newEvents = self._getNewEvents()
+            for event in newEvents:
                 self.log.debug( "Processing %s", event['id'] )
                 for collection in self._pluginCollections:
                     collection.process(event)
                 self._saveEventIdData()
 
-            time.sleep(self._fetch_interval)
+            # only sleep if the event list wasn't artificially limited
+            if len(newEvents) < self.config.getMaxEventBatchSize():
+                time.sleep(self._fetch_interval)
 
             # Reload plugins
             for collection in self._pluginCollections:
