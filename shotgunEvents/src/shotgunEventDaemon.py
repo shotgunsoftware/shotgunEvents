@@ -592,6 +592,9 @@ class Engine(object):
         backlogEvents = self._fetchEventLogEntries(filters=[['id', 'in', list(backlogs)]],
                                                    order=[{'column':'id', 'direction':'asc'}])
 
+        # debug: fake drop of an event
+        # backlogEvents = filter(lambda ev: ev['id'] != 9830708, backlogEvents)
+
         if backlogEvents:
             self.log.info('> Found %d backlogs!', len(backlogEvents))
 
@@ -646,7 +649,7 @@ class Engine(object):
             nextEvents = self._fetchEventLogEntries(filters, fields, order, limit=self.config.getMaxEventBatchSize())
 
             # debug: fake drop of an event
-            # nextEvents = filter(lambda ev: ev['id'] != 9808246, nextEvents)
+            # nextEvents = filter(lambda ev: ev['id'] != 9830708, nextEvents)
 
             if nextEvents:
                 self.log.debug('> %d events: %d to %d.', len(nextEvents), nextEvents[0]['id'], nextEvents[-1]['id'])
@@ -708,9 +711,8 @@ class Engine(object):
                                     if isinstance(item, dict):
                                         for k, v in item.iteritems():
                                             if isinstance(v, datetime.datetime):
-                                                v = v.astimezone(sg.sg_timezone.local)
-                                                v = v.replace(tzinfo=None)
-                                                item[k] = v
+                                                item[k] = normalizeSgDatetime(v)
+
                         pickle.dump(cleanData, fh)
                         fh.close()
 
@@ -1064,12 +1066,17 @@ class Plugin(object):
 
         if event['id'] in self._backlog:
             if self._process(event):
-                self.logger.info('Processed id %d from backlog.' % event['id'])
+                elapsedTime = datetime.datetime.now()-normalizeSgDatetime(event['created_at'])
+                self.logger.info('Processed id %d from backlog - created %d seconds ago'
+                                 % (event['id'], elapsedTime.total_seconds()))
+
                 del(self._backlog[event['id']])
                 self._updateLastEventId(event['id'], event['created_at'])
+
         elif self._lastEventId is not None and event['id'] <= self._lastEventId:
             msg = 'Event %d is too old. Last event processed was (%d).'
             self.logger.debug(msg, event['id'], self._lastEventId)
+
         else:
             if self._process(event):
                 self._updateLastEventId(event['id'], event['created_at'])
@@ -1080,16 +1087,25 @@ class Plugin(object):
         for callback in self:
             if callback.isActive():
                 if callback.canProcess(event):
-                    msg = 'Dispatching event %d to callback %s.'
-                    self.logger.debug(msg, event['id'], str(callback))
+
+                    processStartingTime = time.clock()
+                    self.logger.debug('Dispatching event %d to callback %s.', event['id'], str(callback))
+
                     if not callback.process(event):
                         # A callback in the plugin failed. Deactivate the whole
                         # plugin.
                         self._active = False
                         break
+
+                    processTime = time.clock()-processStartingTime
+                    dispatchTime = (datetime.datetime.now()-normalizeSgDatetime(event['created_at'])).total_seconds()
+                    self.logger.debug('[Stats][%d][%s] total: ~%s s, handling: ~%s s, processing: %s s'
+                                      % (event['id'], str(callback),
+                                         dispatchTime + processTime,
+                                         dispatchTime, processTime))
+
             else:
-                msg = 'Skipping inactive callback %s in plugin.'
-                self.logger.debug(msg, str(callback))
+                self.logger.debug('Skipping inactive callback %s in plugin.', str(callback))
 
         return self._active
 
@@ -1400,6 +1416,13 @@ class ConfigError(EventDaemonError):
     """
     pass
 
+def normalizeSgDatetime(datetime):
+    if datetime.tzinfo is None:  # already normalized
+        return datetime
+
+    norm = datetime.astimezone(sg.sg_timezone.local)
+    norm = norm.replace(tzinfo=None)
+    return norm
 
 if sys.platform == 'win32':
     class WindowsService(win32serviceutil.ServiceFramework):
