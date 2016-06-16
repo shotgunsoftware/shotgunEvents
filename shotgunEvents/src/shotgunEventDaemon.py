@@ -800,8 +800,6 @@ class PluginCollection(object):
             newId = plugin.getNextUnprocessedEventId()
             if newId is not None and (eId is None or newId < eId):
                 eId = newId
-        if eId is None and lastEventId is not None:
-            return lastEventId+1
         return eId
 
     def getCleanBacklogIds(self):
