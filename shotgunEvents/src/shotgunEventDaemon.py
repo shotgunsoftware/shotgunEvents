@@ -745,7 +745,7 @@ class Engine(object):
         handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
         logging.getLogger().addHandler(handler)
         # Retrieve the event
-        fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid']
+        fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid', 'created_at']
         result = self._sg.find_one("EventLogEntry", filters=[['id', 'is', eventId]], fields=fields )
         if not result :
             raise ValueError("Couldn't find event %d" % eventId)
