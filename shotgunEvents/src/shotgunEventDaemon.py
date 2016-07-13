@@ -637,7 +637,7 @@ class Engine(object):
         @return: Recent events that need to be processed by the engine.
         @rtype: I{list} of Shotgun event dictionaries.
         """
-        nextEventId = min([coll.getNextUnprocessedEventId() or -1 for coll in self._pluginCollections])
+        nextEventId = min([coll.getNextUnprocessedEventId() or -1 for coll in self._pluginCollections if coll.isActive()])
 
         if nextEventId != -1:
             filters = [['id', 'greater_than', nextEventId - 1]]
@@ -790,6 +790,12 @@ class PluginCollection(object):
         for plugin in self:
             self._stateData[plugin.getName()] = plugin.getState()
         return self._stateData
+
+    def isActive(self):
+        for plugin in self:
+            if plugin.isActive():
+                return True
+        return False
 
     def getNextUnprocessedEventId(self):
         eId = None
