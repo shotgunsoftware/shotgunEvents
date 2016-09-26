@@ -37,6 +37,7 @@ import sys
 import time
 import traceback
 import copy
+import json
 from distutils.version import StrictVersion
 from optparse import OptionParser
 
@@ -286,6 +287,16 @@ class Config(ConfigParser.ConfigParser):
             return self.getboolean('daemon', 'reprocess_on_backlog') or False
         return False
 
+    def getEventStatTimeout(self):
+        if self.has_option('daemon', 'event_stat_timeout'):
+            return self.getint('daemon', 'event_stat_timeout')
+        return 3600
+
+    def getMonitoringRefresh(self):
+        if self.has_option('daemon', 'monitoring_refresh'):
+            return self.getint('daemon', 'monitoring_refresh')
+        return 20
+
 
 class Engine(object):
     """
@@ -322,12 +333,14 @@ class Engine(object):
         self.projectsToFilter = self.config.getProjectNames()
         self.treatNonProjectEvents = self.config.getTreatNonProjectEvents()
 
+        self._last_monitoring_time = datetime.datetime.now()
+
         # Setup the logger for the main engine
         if self.config.getLogMode() == 0:
             # Set the root logger for file output.
             rootLogger = logging.getLogger()
             rootLogger.config = self.config
-            _setFilePathOnLogger(rootLogger, self.config.getLogFile())
+            _setFilePathOnLogger(rootLogger, '%s.%s' % (self.config.getLogFile(), '.stats'))
             print self.config.getLogFile()
 
             # Set the engine logger for email output.
@@ -574,10 +587,37 @@ class Engine(object):
             # Make sure that newly loaded events have proper state.
             self._loadEventIdData()
 
+            self._handleMonitoring()
+
         self.log.debug('Shuting down event processing loop.')
 
     def stop(self):
         self._continue = False
+
+    def _handleMonitoring(self):
+        now = datetime.datetime.now()
+        if now >= self._last_monitoring_time + datetime.timedelta(seconds=self.config.getMonitoringRefresh()):
+            self._last_monitoring_time = now
+
+            stats = []
+            shouldDelete = True
+            for maxTime in [3600, 900, 60]:
+                stats.append({
+                    'last_update': str(now),
+                    'period': maxTime,
+                    'stats': self.getStats(maxTime=maxTime, delete=shouldDelete),
+                })
+                shouldDelete = False
+
+
+            with open(self.config.getLogFile('stats'), 'w') as f:
+                json.dump(stats, f)
+
+    def getStats(self, maxTime=None, delete=False):
+        return {
+            collection.path: collection.getStats(maxTime=maxTime, delete=delete)
+            for collection in self._pluginCollections
+        }
 
     def _processNewBacklogs(self):
         backlogs = set()
@@ -814,6 +854,9 @@ class PluginCollection(object):
             backlogs |= plugin.getCleanBacklogIds()
         return backlogs
 
+    def getStats(self, maxTime=None, delete=False):
+        return {plugin.getName(): plugin.getStats(maxTime=maxTime, delete=delete) for plugin in self}
+
     def process(self, event, forceEvent=False ):
         for plugin in self:
             if plugin.isActive():
@@ -930,6 +973,7 @@ class Plugin(object):
         self._mtime = None
         self._lastEventId = None
         self._backlog = {}
+        self._eventStats = {}
 
         # Setup the plugin's logger
         self.logger = logging.getLogger('plugin.' + self.getName())
@@ -941,6 +985,82 @@ class Plugin(object):
 
     def getName(self):
         return self._pluginName
+
+    def getStats(self, maxTime=None, delete=False):
+        callbacks = {}
+        ignored = {}  # {reason: count}
+        ignoreCount = 0
+        backlogCount = 0
+        total = 0
+
+        if maxTime:
+            minDate = datetime.datetime.now() - datetime.timedelta(seconds=maxTime)
+
+        for eventId in self._eventStats.keys():
+            eventStats = self._eventStats[eventId]
+            if maxTime and eventStats['added_at'] < minDate:
+                if delete:
+                    del(self._eventStats[eventId])
+
+            else:
+                total += 1
+
+                if eventStats.get('backlog'):
+                    backlogCount += 1
+
+                ignoreReason = eventStats.get('ignored')
+                if ignoreReason:
+                    ignored[ignoreReason] = ignored.get(ignoreReason, 0) + 1
+                    ignoreCount += 1
+
+                callbackStats = eventStats.get('callbacks')
+                if callbackStats:
+                    for c in callbackStats:
+                        if c['callback'] not in callbacks:
+                            callbacks[c['callback']] = {
+                                'ignored': {},
+                                'ignoreCount': 0,
+                                'totalDispatch': 0,
+                                'totalProcess': 0,
+                                'handled': 0,
+                                'maxDispatch': 0,
+                                'maxProcess': 0,
+                                'averageDispatch': 0,
+                                'averageProcess': 0,
+                            }
+
+                        cStats = callbacks[c['callback']]
+
+                        ignoreReason = c.get('ignored')
+                        if ignoreReason:
+                            cStats['ignored'][ignoreReason] = cStats['ignored'].get(ignoreReason, 0) + 1
+                            cStats['ignoreCount'] += 1
+
+                        if c.get('handled', False):
+                            cStats['handled'] += 1
+                            cStats['totalDispatch'] += c['dispatch']
+                            cStats['totalProcess'] += c['process']
+                            cStats['maxDispatch'] = max(cStats['maxDispatch'], c['dispatch'])
+                            cStats['maxProcess'] = max(cStats['maxProcess'], c['process'])
+
+        for c, cdict in callbacks.iteritems():
+            if cdict['handled'] > 0:
+                cdict['averageDispatch'] = cdict['totalDispatch']/cdict['handled']
+                cdict['averageProcess'] = cdict['totalProcess']/cdict['handled']
+
+        stats = {
+            'lastEventId': self._lastEventId,
+            'active': self.isActive(),
+
+            'total': total,
+            'globalIgnoreCount': ignoreCount,
+            'globalIgnored': ignored,
+            'callbacks': callbacks,
+            'remainingBacklogCount': len(self._backlog),
+            'handledBacklogCount': backlogCount,
+        }
+
+        return stats
 
     def setState(self, state):
         if isinstance(state, int):
@@ -1052,6 +1172,13 @@ class Plugin(object):
             self._process( event )
             return self._active
 
+        # debug: print event with an absurdly large dispatch time
+        # if (datetime.datetime.now()-normalizeSgDatetime(event['created_at'])).total_seconds() > 10000:
+        #     print 'elapsed: %s' % (datetime.datetime.now()-normalizeSgDatetime(event['created_at'])).total_seconds()
+        #     print 'on event: %s' % event
+        #     print 'created_at: %s => %s' % (event['created_at'], normalizeSgDatetime(event['created_at']))
+        #     print 'now: %s' % datetime.datetime.now()
+
         # Filtering event by projects
         if self._engine.enableProjectFiltering:
             if event['project'] is None:
@@ -1059,6 +1186,7 @@ class Plugin(object):
                     self.logger.debug("Ignoring non project dependent event"
                                       " %s" % event['id'])
                     self._updateLastEventId(event['id'], event['created_at'])
+                    self._getOrCreateEventStats(event)['ignored'] = 'non project dependent'
                     return self._active
 
             elif event['project']['name'] not in self._engine.projectsToFilter:
@@ -1066,10 +1194,11 @@ class Plugin(object):
                                   " %s" % (event['id'],
                                            event['project']['name']))
                 self._updateLastEventId(event['id'], event['created_at'])
+                self._getOrCreateEventStats(event)['ignored'] = 'non handled project %s' % event['project']['name']
                 return self._active
 
         if event['id'] in self._backlog:
-            if self._process(event):
+            if self._process(event, backlog=True):
                 elapsedTime = datetime.datetime.now()-normalizeSgDatetime(event['created_at'])
                 self.logger.info('Processed id %d from backlog - created %d seconds ago'
                                  % (event['id'], elapsedTime.total_seconds()))
@@ -1080,6 +1209,7 @@ class Plugin(object):
         elif self._lastEventId is not None and event['id'] <= self._lastEventId:
             msg = 'Event %d is too old. Last event processed was (%d).'
             self.logger.debug(msg, event['id'], self._lastEventId)
+            self._getOrCreateEventStats(event)['ignored'] = 'too old'
 
         else:
             if self._process(event):
@@ -1087,9 +1217,10 @@ class Plugin(object):
 
         return self._active
 
-    def _process(self, event):
+    def _process(self, event, backlog=False):
         for callback in self:
             if callback.isActive():
+                now = datetime.datetime.now()
                 if callback.canProcess(event):
 
                     processStartingTime = time.clock()
@@ -1101,17 +1232,47 @@ class Plugin(object):
                         self._active = False
                         break
 
+                    # TODO hardcoded and ugly
+                    # ignore version change viewed_by_current_user, as it sometimes takes days to showup of the events
+                    if event.get('attribute_name') == 'viewed_by_current_user':
+                        return self._active
+
                     processTime = time.clock()-processStartingTime
-                    dispatchTime = (datetime.datetime.now()-normalizeSgDatetime(event['created_at'])).total_seconds()
+                    dispatchTime = (now-normalizeSgDatetime(event['created_at'])).total_seconds()
                     self.logger.debug('[Stats][%d][%s] total: ~%s s, handling: ~%s s, processing: %s s'
                                       % (event['id'], str(callback),
                                          dispatchTime + processTime,
                                          dispatchTime, processTime))
+                    self._getOrCreateEventStats(event, backlog)['callbacks'].append({
+                        'handled': True,
+                        'callback': str(callback),
+                        'dispatch': dispatchTime,
+                        'process': processTime,
+                    })
+
+                else:
+                    if event.get('attribute_name') == 'viewed_by_current_user':
+                        return self._active
+
+                    self._getOrCreateEventStats(event, backlog)['callbacks'].append({
+                        'callback': str(callback),
+                        'ignored': 'event type',
+                    })
 
             else:
                 self.logger.debug('Skipping inactive callback %s in plugin.', str(callback))
 
         return self._active
+
+    def _getOrCreateEventStats(self, event, backlog=False):
+        if event['id'] not in self._eventStats:
+            self._eventStats[event['id']] = {
+                'added_at': datetime.datetime.now(),
+                'callbacks': [],
+                # 'event': event,
+                'backlog': backlog,
+            }
+        return self._eventStats[event['id']]
 
     def _updateLastEventId(self, eventId, eventCreationDate):
         if self._lastEventId is not None and eventId > self._lastEventId + 1:
