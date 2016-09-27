@@ -38,6 +38,7 @@ import time
 import traceback
 import copy
 import json
+import math
 from distutils.version import StrictVersion
 from optparse import OptionParser
 
@@ -82,6 +83,8 @@ Line: %(lineno)d
 
 ACTIONS = ['start', 'stop', 'restart', 'foreground', 'forceEvents']
 CONFIG_DIRECTORIES = ['/etc', os.path.dirname(__file__)]
+
+STAT_TIMINGS = [3600, 900, 60]
 
 
 def _setFilePathOnLogger(logger, path):
@@ -295,7 +298,7 @@ class Config(ConfigParser.ConfigParser):
     def getMonitoringRefresh(self):
         if self.has_option('daemon', 'monitoring_refresh'):
             return self.getint('daemon', 'monitoring_refresh')
-        return 20
+        return 60
 
 
 class Engine(object):
@@ -334,6 +337,7 @@ class Engine(object):
         self.treatNonProjectEvents = self.config.getTreatNonProjectEvents()
 
         self._last_monitoring_time = datetime.datetime.now()
+        self._fetch_timings = []
 
         # Setup the logger for the main engine
         if self.config.getLogMode() == 0:
@@ -601,7 +605,7 @@ class Engine(object):
 
             stats = []
             shouldDelete = True
-            for maxTime in [3600, 900, 60]:
+            for maxTime in STAT_TIMINGS:
                 stats.append({
                     'last_update': str(now),
                     'period': maxTime,
@@ -614,10 +618,25 @@ class Engine(object):
                 json.dump(stats, f)
 
     def getStats(self, maxTime=None, delete=False):
-        return {
+        stats = {
             collection.path: collection.getStats(maxTime=maxTime, delete=delete)
             for collection in self._pluginCollections
         }
+
+        newFetchTimings = []
+        allTimings = []
+        minDate = datetime.datetime.now() - datetime.timedelta(seconds=maxTime)
+        for timing in self._fetch_timings:
+            if not maxTime or timing['added_at'] >= minDate:
+                newFetchTimings.append(timing)
+                allTimings.append(timing['timing'])
+
+        if delete:
+            self._fetch_timings = newFetchTimings
+
+        stats['fetchTimeDeciles'] = deciles(allTimings)
+
+        return stats
 
     def _processNewBacklogs(self):
         backlogs = set()
@@ -686,7 +705,12 @@ class Engine(object):
 
             self.log.debug("Checking events from %d", nextEventId)
 
+            fetchStartingTime = time.clock()
             nextEvents = self._fetchEventLogEntries(filters, fields, order, limit=self.config.getMaxEventBatchSize())
+            self._fetch_timings.append({
+                'added_at': datetime.datetime.now(),
+                'timing': time.clock()-fetchStartingTime,
+            })
 
             # debug: fake drop of an event
             # nextEvents = filter(lambda ev: ev['id'] != 9830708, nextEvents)
@@ -1023,10 +1047,12 @@ class Plugin(object):
                                 'totalDispatch': 0,
                                 'totalProcess': 0,
                                 'handled': 0,
-                                'maxDispatch': 0,
-                                'maxProcess': 0,
                                 'averageDispatch': 0,
                                 'averageProcess': 0,
+                                'dispatchDeciles': [0 for i in range(0,11)],
+                                'processDeciles': [0 for i in range(0,11)],
+                                'dispatchList': [],
+                                'processList': [],
                             }
 
                         cStats = callbacks[c['callback']]
@@ -1038,15 +1064,19 @@ class Plugin(object):
 
                         if c.get('handled', False):
                             cStats['handled'] += 1
+                            cStats['dispatchList'].append(c['dispatch'])
+                            cStats['processList'].append(c['process'])
                             cStats['totalDispatch'] += c['dispatch']
                             cStats['totalProcess'] += c['process']
-                            cStats['maxDispatch'] = max(cStats['maxDispatch'], c['dispatch'])
-                            cStats['maxProcess'] = max(cStats['maxProcess'], c['process'])
 
         for c, cdict in callbacks.iteritems():
             if cdict['handled'] > 0:
                 cdict['averageDispatch'] = cdict['totalDispatch']/cdict['handled']
                 cdict['averageProcess'] = cdict['totalProcess']/cdict['handled']
+                cdict['dispatchDeciles'] = deciles(cdict['dispatchList'])
+                cdict['processDeciles'] = deciles(cdict['processList'])
+                del(cdict['dispatchList'])
+                del(cdict['processList'])
 
         stats = {
             'lastEventId': self._lastEventId,
@@ -1586,6 +1616,20 @@ class ConfigError(EventDaemonError):
     Used when an error is detected in the config file.
     """
     pass
+
+def percentile(l, percent):
+    if not l:
+        return None
+    k = (len(l)-1)*percent
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return l[int(k)]
+    return l[int(f)] * (c-k) + l[int(c)] * (k-f)
+
+def deciles(l):
+    l.sort()
+    return [percentile(l, i*0.1) for i in range(11)]
 
 def normalizeSgDatetime(datetime):
     if datetime.tzinfo is None:  # already normalized
