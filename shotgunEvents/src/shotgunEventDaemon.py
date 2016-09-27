@@ -84,7 +84,7 @@ Line: %(lineno)d
 ACTIONS = ['start', 'stop', 'restart', 'foreground', 'forceEvents']
 CONFIG_DIRECTORIES = ['/etc', os.path.dirname(__file__)]
 
-STAT_TIMINGS = [3600, 900, 60]
+STAT_TIMINGS = [60]
 
 
 def _setFilePathOnLogger(logger, path):
@@ -290,15 +290,21 @@ class Config(ConfigParser.ConfigParser):
             return self.getboolean('daemon', 'reprocess_on_backlog') or False
         return False
 
-    def getEventStatTimeout(self):
-        if self.has_option('daemon', 'event_stat_timeout'):
-            return self.getint('daemon', 'event_stat_timeout')
-        return 3600
-
     def getMonitoringRefresh(self):
         if self.has_option('daemon', 'monitoring_refresh'):
             return self.getint('daemon', 'monitoring_refresh')
         return 60
+
+    def getStatTimings(self):
+        if self.getEnableProjectFiltering():
+            if self.has_option('project', 'stat_timings'):
+                timings = self.get('project', 'stat_timings').split(',')
+                return sorted([int(t) for t in timings], reverse=True)
+            else:
+                raise ConfigError('No stat timings defined. Either remove the key from the config file, or define some values')
+        # return [3600, 900, 60]  # TODO stat module too heavy to keep 150k event stat infos for ~20 plugins
+        # return [300, 60]
+        return [60]
 
 
 class Engine(object):
@@ -338,6 +344,7 @@ class Engine(object):
 
         self._last_monitoring_time = datetime.datetime.now()
         self._fetch_timings = []
+        self.stat_timings = self.config.getStatTimings()
 
         # Setup the logger for the main engine
         if self.config.getLogMode() == 0:
@@ -601,18 +608,23 @@ class Engine(object):
     def _handleMonitoring(self):
         now = datetime.datetime.now()
         if now >= self._last_monitoring_time + datetime.timedelta(seconds=self.config.getMonitoringRefresh()):
+            monitoringStartingTime = time.clock()
             self._last_monitoring_time = now
 
             stats = []
             shouldDelete = True
-            for maxTime in STAT_TIMINGS:
+            for maxTime in self.stat_timings:
                 stats.append({
-                    'last_update': str(now),
                     'period': maxTime,
                     'stats': self.getStats(maxTime=maxTime, delete=shouldDelete),
                 })
                 shouldDelete = False
 
+            # bootstrap monitoring with its timing
+            stats.append({
+                'last_update': str(now),
+                'monitoring_time': time.clock()-monitoringStartingTime,
+            })
 
             with open(self.config.getLogFile('stats'), 'w') as f:
                 json.dump(stats, f)
