@@ -296,12 +296,9 @@ class Config(ConfigParser.ConfigParser):
         return 60
 
     def getStatTimings(self):
-        if self.getEnableProjectFiltering():
-            if self.has_option('project', 'stat_timings'):
-                timings = self.get('project', 'stat_timings').split(',')
-                return sorted([int(t) for t in timings], reverse=True)
-            else:
-                raise ConfigError('No stat timings defined. Either remove the key from the config file, or define some values')
+        if self.has_option('daemon', 'stat_timings'):
+            timings = self.get('daemon', 'stat_timings').split(',')
+            return sorted([int(t) for t in timings], reverse=True)
         # return [3600, 900, 60]  # TODO stat module too heavy to keep 150k event stat infos for ~20 plugins
         # return [300, 60]
         return [60]
