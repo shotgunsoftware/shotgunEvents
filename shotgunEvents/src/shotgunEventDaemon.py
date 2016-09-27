@@ -1319,7 +1319,11 @@ class Plugin(object):
             for skippedId in range(self._lastEventId + 1, eventId):
                 self.logger.info('Adding event id %d to backlog.', skippedId)
                 self._backlog[skippedId] = expiration
-        self._lastEventId = eventId
+
+        # sometimes the loop rollbacks (SG bug returning some unwanted stuff?)
+        # force to never ever go back
+        if self._lastEventId is None or eventId > self._lastEventId:
+            self._lastEventId = eventId
 
     def __iter__(self):
         """
