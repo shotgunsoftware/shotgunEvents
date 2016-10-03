@@ -649,8 +649,19 @@ class Engine(object):
 
     def _processNewBacklogs(self):
         backlogs = set()
+        expired = set()
+        newBacklogs = set()
         for collection in self._pluginCollections:
-            backlogs |= collection.getCleanBacklogIds()
+            newBacklogs |= collection.getAndPurgeNewBacklog()
+            cBacklogs, cExpired = collection.getBacklogIds()
+            backlogs |= cBacklogs
+            expired |= cExpired
+
+        if newBacklogs:
+            self.log.info('Adding events %s to backlog', newBacklogs)
+
+        if expired:
+            self.log.warning('Timeout elapsed on backlog events: %s', list(expired))
 
         if len(backlogs) == 0:
             return
@@ -881,11 +892,14 @@ class PluginCollection(object):
                 eId = newId
         return eId
 
-    def getCleanBacklogIds(self):
+    def getBacklogIds(self):
         backlogs = set()
+        expired = set()
         for plugin in self:
-            backlogs |= plugin.getCleanBacklogIds()
-        return backlogs
+            pBacklogs, pExpired = plugin.getBacklogIds()
+            backlogs |= pBacklogs
+            expired |= pExpired
+        return backlogs, expired
 
     def getStats(self, maxTime=None, delete=False):
         return {plugin.getName(): plugin.getStats(maxTime=maxTime, delete=delete) for plugin in self}
@@ -897,6 +911,12 @@ class PluginCollection(object):
                 plugin.process(event, forceEvent)
             else:
                 plugin.logger.debug('Skipping: inactive.')
+
+    def getAndPurgeNewBacklog(self):
+        newBacklogs = set()
+        for plugin in self:
+            newBacklogs |= plugin.getAndPurgeNewBacklog()
+        return newBacklogs
 
     def load(self, configPath=None ):
         """
@@ -1006,6 +1026,7 @@ class Plugin(object):
         self._mtime = None
         self._lastEventId = None
         self._backlog = {}
+        self._newBacklog = set()
         self._eventStats = {}
 
         # Setup the plugin's logger
@@ -1118,15 +1139,16 @@ class Plugin(object):
         else:
             return None
 
-    def getCleanBacklogIds(self):
+    def getBacklogIds(self):
         now = datetime.datetime.now()
+        expired = set()
         for k in self._backlog.keys():
             v = self._backlog[k]
             if v < now:
-                self.logger.warning('Timeout elapsed on backlog event id %d.', k)
+                expired.add(k)
                 del(self._backlog[k])
 
-        return set(self._backlog.keys())
+        return set(self._backlog.keys()), expired
 
     def isActive(self):
         """
@@ -1317,13 +1339,18 @@ class Plugin(object):
         if self._lastEventId is not None and eventId > self._lastEventId + 1:
             expiration = eventCreationDate + datetime.timedelta(seconds=self._engine.config.getBacklogTimeout())
             for skippedId in range(self._lastEventId + 1, eventId):
-                self.logger.info('Adding event id %d to backlog.', skippedId)
+                self._newBacklog.add(skippedId)  # for futur logging
                 self._backlog[skippedId] = expiration
 
         # sometimes the loop rollbacks (SG bug returning some unwanted stuff?)
         # force to never ever go back
         if self._lastEventId is None or eventId > self._lastEventId:
             self._lastEventId = eventId
+
+    def getAndPurgeNewBacklog(self):
+        newBacklogs = set(self._newBacklog)
+        self._newBacklog = set()
+        return newBacklogs
 
     def __iter__(self):
         """
