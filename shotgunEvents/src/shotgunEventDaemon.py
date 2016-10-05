@@ -295,6 +295,11 @@ class Config(ConfigParser.ConfigParser):
             return self.getint('daemon', 'monitoring_refresh')
         return 60
 
+    def getConnRetryMicroSleep(self):
+        if self.has_option('daemon', 'conn_retry_microsleep'):
+            return self.getint('daemon', 'conn_retry_microsleep')
+        return 1
+
     def getStatTimings(self):
         if self.has_option('daemon', 'stat_timings'):
             timings = self.get('daemon', 'stat_timings').split(',')
@@ -331,6 +336,7 @@ class Engine(object):
         )
         self._max_conn_retries = self.config.getint('daemon', 'max_conn_retries')
         self._conn_retry_sleep = self.config.getint('daemon', 'conn_retry_sleep')
+        self._conn_retry_microsleep = self.config.getConnRetryMicroSleep()
         self._fetch_interval = self.config.getint('daemon', 'fetch_interval')
         self._use_session_uuid = self.config.getboolean('shotgun', 'use_session_uuid')
 
@@ -821,6 +827,7 @@ class Engine(object):
             time.sleep(self._conn_retry_sleep)
         else:
             self.log.warning('Unable to connect to Shotgun (attempt %s of %s): %s', conn_attempts, self._max_conn_retries, msg)
+            time.sleep(self._conn_retry_microsleep)
         return conn_attempts
 
     def _runSingleEvent( self, eventId ) :
@@ -1472,6 +1479,8 @@ class Callback(object):
         self._logger = logging.getLogger(plugin.logger.name + '.' + self._name)
         self._logger.config = self._engine.config
 
+        self._fullname = plugin.logger.name + '.' + self._name
+
     def canProcess(self, event):
         if not self._matchEvents:
             return True
@@ -1509,7 +1518,23 @@ class Callback(object):
             self._shotgun.set_session_uuid(event['session_uuid'])
 
         try:
-            self._callback(self._shotgun, self._logger, event, self._args)
+            # retry until we got a none 503 error, or we exceed the max retry count
+            try_count = 0
+            while True:
+                try_count += 1
+                try:
+                    self._callback(self._shotgun, self._logger, event, self._args)
+                    break
+
+                except sg.lib.xmlrpclib.ProtocolError, e:  # 503 error: shotgun is busy, pause & retry
+                    if try_count < self._engine._max_conn_retries:
+                        self._logger.warning('Unable to connect to Shotgun in callback %s (attempt %s of %s): %s', self._fullname, try_count, self._engine._max_conn_retries, str(e))
+                        time.sleep(self._engine._conn_retry_microsleep)
+                    else:
+                        try_count = 0
+                        self._logger.error('Unable to connect to Shotgun in callback %s (attempt %s of %s): %s', self._fullname, try_count, self._engine._max_conn_retries, str(e))
+                        time.sleep(self._engine._conn_retry_sleep)
+
         except Exception as erro:
             # Get the local variables of the frame of our plugin
             tb = sys.exc_info()[2]
