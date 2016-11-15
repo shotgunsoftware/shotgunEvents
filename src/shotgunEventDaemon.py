@@ -383,7 +383,7 @@ class Engine(object):
                                 if pluginName in maxPluginStates.keys():
                                     state[pluginName] = maxPluginStates[pluginName]
                                 else:
-                                    state[pluginName][0] = latestEventId
+                                    state[pluginName][0] = lastEventId
                             collection.setState(state)
 
                 except pickle.UnpicklingError:
@@ -501,8 +501,8 @@ class Engine(object):
             while True:
                 try:
                     return self._sg.find("EventLogEntry", filters, fields, order, limit=self.config.getMaxEventBatchSize())
-                    if events:
-                        self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
+                    # if events:
+                    #     self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
                 except (sg.ProtocolError, sg.ResponseError, socket.error), err:
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
                 except Exception, err:
@@ -878,8 +878,6 @@ class Callback(object):
         @param shotgun: The Shotgun instance that will be used to communicate
             with your Shotgun server.
         @type shotgun: L{sg.Shotgun}
-        @param logger: An object to log messages with.
-        @type logger: I{logging.Logger}
         @param matchEvents: The event filter to match events against before invoking callback.
         @type matchEvents: dict
         @param args: Any datastructure you would like to be passed to your
