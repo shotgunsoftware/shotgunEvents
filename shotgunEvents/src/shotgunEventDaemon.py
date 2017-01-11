@@ -491,6 +491,20 @@ class Engine(object):
             msg = 'Crash!!!!! Unexpected error (%s) in main loop.\n\n%s'
             self.log.critical(msg, type(err), traceback.format_exc(err))
 
+    def _getLastEventId():
+        conn_attempts = 0
+        while True:
+            order = [{'column':'id', 'direction':'desc'}]
+            try:
+                result = self._sg.find_one("EventLogEntry", filters=[], fields=['id'], order=order)
+            except (sg.ProtocolError, sg.ResponseError, socket.error), err:
+                conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
+            except Exception, err:
+                msg = "Unknown error: %s" % str(err)
+                conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
+            else:
+                return result['id']
+
     def _loadEventIdData(self):
         """
         Load the last processed event id from the disk
@@ -535,23 +549,10 @@ class Engine(object):
         else:
             # No id file?
             # Get the event data from the database.
-            conn_attempts = 0
-            lastEventId = None
-            while lastEventId is None:
-                order = [{'column':'id', 'direction':'desc'}]
-                try:
-                    result = self._sg.find_one("EventLogEntry", filters=[], fields=['id'], order=order)
-                except (sg.ProtocolError, sg.ResponseError, socket.error), err:
-                    conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
-                except Exception, err:
-                    msg = "Unknown error: %s" % str(err)
-                    conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
-                else:
-                    lastEventId = result['id']
-                    self.log.info('Last event id (%d) from the Shotgun database.', lastEventId)
-
-                    for collection in self._pluginCollections:
-                        collection.setState(lastEventId)
+            lastEventId = self._getLastEventId()
+            self.log.info('Last event id (%d) from the Shotgun database.', lastEventId)
+            for collection in self._pluginCollections:
+                collection.setState(lastEventId)
 
             self._saveEventIdData()
 
@@ -724,31 +725,34 @@ class Engine(object):
         """
         nextEventId = min([coll.getNextUnprocessedEventId() or -1 for coll in self._pluginCollections if coll.isActive()])
 
-        if nextEventId != -1:
-            filters = [['id', 'greater_than', nextEventId - 1]]
-            fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'description', 'session_uuid', 'created_at']
-            order = [{'column':'id', 'direction':'asc'}]
+        if nextEventId == -1:  # no active plugin have any event id saved, retrieve it from SG
+            nextEventId = self._getLastEventId()
+            for collection in self._pluginCollections:
+                if collection.isActive():
+                    collection.setState(nextEventId)
 
-            self.log.debug("Checking events from %d", nextEventId)
+        filters = [['id', 'greater_than', nextEventId - 1]]
+        fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'description', 'session_uuid', 'created_at']
+        order = [{'column':'id', 'direction':'asc'}]
 
-            fetchStartingTime = time.clock()
-            nextEvents = self._fetchEventLogEntries(filters, fields, order, limit=self.config.getMaxEventBatchSize())
-            self._fetch_timings.append({
-                'added_at': datetime.datetime.now(),
-                'timing': time.clock()-fetchStartingTime,
-            })
+        self.log.debug("Checking events from %d", nextEventId)
 
-            # debug: fake drop of an event
-            # nextEvents = filter(lambda ev: ev['id'] != 9830708, nextEvents)
+        fetchStartingTime = time.clock()
+        nextEvents = self._fetchEventLogEntries(filters, fields, order, limit=self.config.getMaxEventBatchSize())
+        self._fetch_timings.append({
+            'added_at': datetime.datetime.now(),
+            'timing': time.clock()-fetchStartingTime,
+        })
 
-            if nextEvents:
-                self.log.debug('> %d events: %d to %d.', len(nextEvents), nextEvents[0]['id'], nextEvents[-1]['id'])
-            else:
-                self.log.debug('> No events.')
+        # debug: fake drop of an event
+        # nextEvents = filter(lambda ev: ev['id'] != 9830708, nextEvents)
 
-            return nextEvents
+        if nextEvents:
+            self.log.debug('> %d events: %d to %d.', len(nextEvents), nextEvents[0]['id'], nextEvents[-1]['id'])
+        else:
+            self.log.debug('> No events.')
 
-        return []
+        return nextEvents
 
 
     def _fetchEventLogEntries(self, filters, fields=['id'], order=[], limit=0):
