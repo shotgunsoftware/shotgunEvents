@@ -491,7 +491,7 @@ class Engine(object):
             msg = 'Crash!!!!! Unexpected error (%s) in main loop.\n\n%s'
             self.log.critical(msg, type(err), traceback.format_exc(err))
 
-    def _getLastEventId():
+    def _getLastEventId(self):
         conn_attempts = 0
         while True:
             order = [{'column':'id', 'direction':'desc'}]
