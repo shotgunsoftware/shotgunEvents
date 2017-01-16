@@ -383,7 +383,7 @@ class Engine(object):
                                 if pluginName in maxPluginStates.keys():
                                     state[pluginName] = maxPluginStates[pluginName]
                                 else:
-                                    state[pluginName][0] = latestEventId
+                                    state[pluginName][0] = lastEventId
                             collection.setState(state)
 
                 except pickle.UnpicklingError:
