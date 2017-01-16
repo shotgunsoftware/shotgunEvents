@@ -36,7 +36,6 @@ import pprint
 import socket
 import sys
 import time
-import types
 import traceback
 
 from distutils.version import StrictVersion
