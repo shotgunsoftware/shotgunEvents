@@ -759,7 +759,7 @@ class Plugin(object):
             self._engine.log.critical('Did not find a registerCallbacks function in plugin at %s.', self._path)
             self._active = False
 
-    def registerCallback(self, sgScriptName, sgScriptKey, callback, matchEvents=None, args=None, stopOnError=True):
+    def registerCallback(self, sgScriptName, sgScriptKey, callback, matchEvents=None, args=None, stopOnError=False):
         """
         Register a callback in the plugin.
         """
