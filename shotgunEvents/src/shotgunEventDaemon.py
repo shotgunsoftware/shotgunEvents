@@ -86,6 +86,10 @@ CONFIG_DIRECTORIES = ['/etc', os.path.dirname(__file__)]
 
 STAT_TIMINGS = [60]
 
+# Shotgun api does not handle an "in" filter with more than 65536 items,
+# but for perf issue, we set it to 1000
+MAX_PACKET_SIZE = 1000
+
 
 def _setFilePathOnLogger(logger, path):
     # Remove any previous handler.
@@ -675,8 +679,12 @@ class Engine(object):
 
         self.log.debug("Checking for %d backlog creation", len(backlogs))
 
-        backlogEvents = self._fetchEventLogEntries(filters=[['id', 'in', list(backlogs)]],
-                                                   order=[{'column':'id', 'direction':'asc'}])
+        backlogList = list(backlogs)
+        backlogEvents = []
+        for i in range(0, len(backlogList), MAX_PACKET_SIZE):
+            backlogEventsPart = self._fetchEventLogEntries(filters=[['id', 'in', backlogList[i:i+MAX_PACKET_SIZE]]],
+                                                           order=[{'column':'id', 'direction':'asc'}])
+            backlogEvents.extend(backlogEventsPart)
 
         # debug: fake drop of an event
         # backlogEvents = filter(lambda ev: ev['id'] != 9830708, backlogEvents)
@@ -706,9 +714,14 @@ class Engine(object):
             else:
                 fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'description', 'session_uuid', 'created_at']
 
-                backlogEvents = self._fetchEventLogEntries(filters=[['id', 'in', list(backlogs)]],
-                                                           fields=fields,
-                                                           order=[{'column':'id', 'direction':'asc'}])
+                backlogList = list(backlogs)
+                backlogEvents = []
+                for i in range(0, len(backlogList), MAX_PACKET_SIZE):
+                    backlogEventsPart = self._fetchEventLogEntries(filters=[['id', 'in', backlogList[i:i+MAX_PACKET_SIZE]]],
+                                                                   fields=fields,
+                                                                   order=[{'column':'id', 'direction':'asc'}])
+                    backlogEvents.extend(backlogEventsPart)
+
                 for collection in self._pluginCollections:
                     for event in backlogEvents:
                         collection.process(event)  # backlog array should be taken care off by the plugin's process
