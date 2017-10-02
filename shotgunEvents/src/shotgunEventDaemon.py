@@ -36,6 +36,8 @@ import socket
 import sys
 import time
 import traceback
+import json
+import math
 from distutils.version import StrictVersion
 from optparse import OptionParser
 
@@ -109,7 +111,7 @@ def _removeHandlersFromLogger(logger, handlerTypes=None):
             logger.removeHandler(handler)
 
 
-def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username=None, password=None, secure=None, use_ssl=None):
+def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username=None, password=None, secure=None):
     """
     Configure a logger with a handler that sends emails to specified
     addresses.
@@ -125,7 +127,7 @@ def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject,
         SMTPHandler.
     """
     if smtpServer and fromAddr and toAddrs and emailSubject:
-        mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject, (username, password), secure, use_ssl)
+        mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject, (username, password), secure)
         mailHandler.setLevel(logging.ERROR)
         mailFormatter = logging.Formatter(EMAIL_FORMAT_STRING)
         mailHandler.setFormatter(mailFormatter)
@@ -158,6 +160,15 @@ class Config(ConfigParser.ConfigParser):
 
     def getEngineScriptKey(self):
         return self.get('shotgun', 'key')
+
+    def getEngineProxyServer(self):
+        try:
+            proxy_server = self.get('shotgun', 'proxy_server').strip()
+            if not proxy_server:
+                return None
+            return proxy_server
+        except ConfigParser.NoOptionError:
+            return None
 
     def getEventIdFile(self):
         return resolveEnv(self.get('daemon', 'eventIdFile'))
@@ -275,6 +286,18 @@ class Config(ConfigParser.ConfigParser):
                 return self.getboolean('project', 'treatNonProjectEvents') or False
         return False
 
+    def getMonitoringRefresh(self):
+        if self.has_option('daemon', 'monitoring_refresh'):
+            return self.getint('daemon', 'monitoring_refresh')
+        return 60
+
+    def getStatTimings(self):
+        if self.has_option('daemon', 'stat_timings'):
+            timings = self.get('daemon', 'stat_timings').split(',')
+            return sorted([int(t) for t in timings], reverse=True)
+        # return [3600, 900, 60]  # TODO stat module too heavy to keep 150k event stat infos for ~20 plugins
+        # return [300, 60]
+        return [60]
 
 class Engine(object):
     """
@@ -300,7 +323,8 @@ class Engine(object):
         self._sg = sg.Shotgun(
             self.config.getShotgunURL(),
             self.config.getEngineScriptName(),
-            self.config.getEngineScriptKey()
+            self.config.getEngineScriptKey(),
+            http_proxy=self.config.getEngineProxyServer()
         )
         self._max_conn_retries = self.config.getint('daemon', 'max_conn_retries')
         self._conn_retry_sleep = self.config.getint('daemon', 'conn_retry_sleep')
@@ -312,12 +336,16 @@ class Engine(object):
         self.projectsToFilter = self.config.getProjectNames()
         self.treatNonProjectEvents = self.config.getTreatNonProjectEvents()
 
+        self._last_monitoring_time = datetime.datetime.now()
+        self._fetch_timings = []
+        self.stat_timings = self.config.getStatTimings()
+
         # Setup the logger for the main engine
         if self.config.getLogMode() == 0:
             # Set the root logger for file output.
             rootLogger = logging.getLogger()
             rootLogger.config = self.config
-            _setFilePathOnLogger(rootLogger, self.config.getLogFile())
+            _setFilePathOnLogger(rootLogger, '%s.%s' % (self.config.getLogFile(), '.stats'))
             print self.config.getLogFile()
 
             # Set the engine logger for email output.
@@ -367,7 +395,9 @@ class Engine(object):
             msg = 'Argument emails should be True to use the default addresses, False to not send any emails or a list of recipient addresses. Got %s.'
             raise ValueError(msg % type(emails))
 
-        _addMailHandlerToLogger(logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure, use_ssl)
+        _addMailHandlerToLogger(
+            logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure
+        )
 
     def getCollectionForPath( self, path, autoDiscover=True, ensureExists=True ) :
         """
@@ -474,10 +504,40 @@ class Engine(object):
                     # Provide event id info to the plugin collections. Once
                     # they've figured out what to do with it, ask them for their
                     # last processed id.
+                    noStateCollections = []
                     for collection in self._pluginCollections:
                         state = self._eventIdData.get(collection.path)
                         if state:
                             collection.setState(state)
+                        else:
+                            noStateCollections.append(collection)
+
+                    # If we don't have a state it means there's no match
+                    # in the id file. First we'll search to see the latest id a
+                    # matching plugin name has elsewhere in the id file. We do
+                    # this as a fallback in case the plugins directory has been
+                    # moved. If there's no match, use the latest event id
+                    # in Shotgun.
+                    if noStateCollections:
+                        maxPluginStates = {}
+                        for collection in self._eventIdData.values():
+                            for pluginName, pluginState in collection.items():
+                                if pluginName in maxPluginStates.keys():
+                                    if pluginState[0] > maxPluginStates[pluginName][0]:
+                                        maxPluginStates[pluginName] = pluginState
+                                else:
+                                    maxPluginStates[pluginName] = pluginState
+
+                        lastEventId = self._getLastEventIdFromDatabase()
+                        for collection in noStateCollections:
+                            state = collection.getState()
+                            for pluginName in state.keys():
+                                if pluginName in maxPluginStates.keys():
+                                    state[pluginName] = maxPluginStates[pluginName]
+                                else:
+                                    state[pluginName][0] = latestEventId
+                            collection.setState(state)
+
                 except pickle.UnpicklingError:
                     fh.close()
 
@@ -543,13 +603,16 @@ class Engine(object):
         self.log.debug('Starting the event processing loop.')
         while self._continue:
             # Process events
-            for event in self._getNewEvents():
-                self.log.debug( "Processing %s", event['id'] )
+            events = self._getNewEvents()
+            for event in events:
                 for collection in self._pluginCollections:
                     collection.process(event)
                 self._saveEventIdData()
 
-            time.sleep(self._fetch_interval)
+            # if we're lagging behind Shotgun, we received a full batch of events
+            # skip the sleep() call in this case
+            if len(events) < self.config.getMaxEventBatchSize():
+                time.sleep(self._fetch_interval)
 
             # Reload plugins
             for collection in self._pluginCollections:
@@ -558,10 +621,58 @@ class Engine(object):
             # Make sure that newly loaded events have proper state.
             self._loadEventIdData()
 
+            self._handleMonitoring()
+
         self.log.debug('Shuting down event processing loop.')
 
     def stop(self):
         self._continue = False
+
+    def _handleMonitoring(self):
+        now = datetime.datetime.now()
+        if now >= self._last_monitoring_time + datetime.timedelta(
+                seconds=self.config.getMonitoringRefresh()):
+            monitoringStartingTime = time.clock()
+            self._last_monitoring_time = now
+
+            stats = []
+            shouldDelete = True
+            for maxTime in self.stat_timings:
+                stats.append({
+                    'period': maxTime,
+                    'stats': self.getStats(maxTime=maxTime, delete=shouldDelete),
+                })
+                shouldDelete = False
+
+            # bootstrap monitoring with its timing
+            stats.append({
+                'last_update': str(now),
+                'monitoring_time': time.clock() - monitoringStartingTime,
+            })
+
+            with open(self.config.getLogFile('stats'), 'w') as f:
+                json.dump(stats, f)
+
+    def getStats(self, maxTime=None, delete=False):
+        stats = {
+            collection.path: collection.getStats(maxTime=maxTime, delete=delete)
+            for collection in self._pluginCollections
+            }
+
+        newFetchTimings = []
+        allTimings = []
+        minDate = datetime.datetime.now() - datetime.timedelta(seconds=maxTime)
+        for timing in self._fetch_timings:
+            if not maxTime or timing['added_at'] >= minDate:
+                newFetchTimings.append(timing)
+                allTimings.append(timing['timing'])
+
+        if delete:
+            self._fetch_timings = newFetchTimings
+
+        stats['fetchTimeDeciles'] = deciles(allTimings)
+
+        return stats
 
     def _getNewEvents(self):
         """
@@ -577,7 +688,8 @@ class Engine(object):
 
         if nextEventId is not None:
             filters = [['id', 'greater_than', nextEventId - 1]]
-            fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'description', 'session_uuid']
+            fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project',
+                      'created_at','description', 'session_uuid']
             order = [{'column':'id', 'direction':'asc'}]
     
             conn_attempts = 0
@@ -708,6 +820,9 @@ class PluginCollection(object):
             return lastEventId+1
         return eId
 
+    def getStats(self, maxTime=None, delete=False):
+        return {plugin.getName(): plugin.getStats(maxTime=maxTime, delete=delete) for plugin in self}
+
     def process(self, event, forceEvent=False ):
         for plugin in self:
             if plugin.isActive():
@@ -716,7 +831,7 @@ class PluginCollection(object):
             else:
                 plugin.logger.debug('Skipping: inactive.')
 
-    def load(self, configPath=None ):
+    def load(self, configPath=None):
         """
         Load plugins from disk.
 
@@ -727,75 +842,79 @@ class PluginCollection(object):
         - For any new plugins, load them, otherwise, refresh them.
         """
         newPlugins = {}
-        
+
         plugins = {}
         listOfPath = [os.path.join(self.path, p) for p in os.listdir(self.path)]
         if os.path.exists(self.commonPath):
-            listOfPath = listOfPath + [os.path.join(self.commonPath,p) for p in os.listdir(self.commonPath)]
+            listOfPath = listOfPath + [os.path.join(self.commonPath, p) for p in
+                                       os.listdir(self.commonPath)]
         for path in listOfPath:
             basename = os.path.basename(path)
             if basename in plugins:
                 plugins[basename].append(os.path.dirname(path))
             else:
                 plugins[basename] = [os.path.dirname(path)]
-        
-        for basename,paths in plugins.items():
+
+        for basename, paths in plugins.items():
             if not basename.endswith('.py') or basename.startswith('.'):
-                continue 
+                continue
             if basename[:-3] in self.blacklist:
                 continue
-            
-            if len(paths) > 1 :
+
+            if len(paths) > 1:
                 if basename[:-3] in self.whitelist:
                     if os.path.exists(self.commonPath):
                         while self.commonPath in paths:
                             paths.remove(self.commonPath)
                         if paths:
-                            newPlugins[basename] = Plugin(self._engine, os.path.join(paths[0], basename))
+                            newPlugins[basename] = Plugin(self._engine,
+                                                          os.path.join(paths[0], basename))
                     else:
-                        newPlugins[basename] = Plugin(self._engine, os.path.join(paths[0], basename))
+                        newPlugins[basename] = Plugin(self._engine,
+                                                      os.path.join(paths[0], basename))
                 else:
-                    newPlugins[basename] = Plugin(self._engine, os.path.join(self.commonPath, basename))
+                    newPlugins[basename] = Plugin(self._engine,
+                                                  os.path.join(self.commonPath, basename))
             elif basename in self._plugins:
                 newPlugins[basename] = self._plugins[basename]
-            elif self._autoDiscover :
+            elif self._autoDiscover:
                 newPlugins[basename] = Plugin(self._engine, os.path.join(paths[0], basename))
-                
-            if basename in newPlugins :
+
+            if basename in newPlugins:
                 newPlugins[basename].load()
-        
-        #TODO : report something when plugins are gone missing
+
+        # TODO : report something when plugins are gone missing
         self._plugins = newPlugins
 
-    def getPlugin( self, file, ensureExists=True ) :
-        """
-        Return the plugin from this collection.
-        If ensureExists is True, ensure it is loaded in this collection.
-        @param file : short name of the plugin to retrieve from this collection
-        @type file : I{str}
-        @param ensureExists : wether or not the plugin should be loaded if not already
-        @rtype : L{Plugin} or None
-        """
-        if file not in self._plugins : # Plugin is not already loaded
-            if ensureExists :
-                self._plugins[file] = Plugin( self._engine, os.path.join( self.path, file))
-                self._plugins[file].load()
-            else :
-                return None
-        return self._plugins[file]
-
-    def unloadPlugin( self, file ) :
-        """
-        Unload the given plugin
-        @param file : short name of the plugin to unload from this collection
-        """
-        if file in self._plugins :
-            self._plugins.pop( file )
+    #
+    # def getPlugin( self, file, ensureExists=True ) :
+    #     """
+    #     Return the plugin from this collection.
+    #     If ensureExists is True, ensure it is loaded in this collection.
+    #     @param file : short name of the plugin to retrieve from this collection
+    #     @type file : I{str}
+    #     @param ensureExists : wether or not the plugin should be loaded if not already
+    #     @rtype : L{Plugin} or None
+    #     """
+    #     if file not in self._plugins : # Plugin is not already loaded
+    #         if ensureExists :
+    #             self._plugins[file] = Plugin( self._engine, os.path.join( self.path, file))
+    #             self._plugins[file].load()
+    #         else :
+    #             return None
+    #     return self._plugins[file]
+    #
+    # def unloadPlugin( self, file ) :
+    #     """
+    #     Unload the given plugin
+    #     @param file : short name of the plugin to unload from this collection
+    #     """
+    #     if file in self._plugins :
+    #         self._plugins.pop( file )
     
     def __iter__(self):
         for basename in sorted(self._plugins.keys()):
-            if basename in self._plugins : # handle the case where plugins were removed while looping
-                yield self._plugins[basename]
+            yield self._plugins[basename]
 
 
 class Plugin(object):
@@ -815,6 +934,7 @@ class Plugin(object):
         self._engine = engine
         self._path = path
         self._configPath = _getConfigPath()
+
         if not os.path.isfile(path):
             raise ValueError('The path to the plugin is not a valid file - %s.' % path)
 
@@ -824,6 +944,8 @@ class Plugin(object):
         self._mtime = None
         self._lastEventId = None
         self._backlog = {}
+        self._eventStats = {}
+
 
         # Setup the plugin's logger
         self.logger = logging.getLogger('plugin.' + self.getName())
@@ -835,6 +957,88 @@ class Plugin(object):
 
     def getName(self):
         return self._pluginName
+
+    def getStats(self, maxTime=None, delete=False):
+        callbacks = {}
+        ignored = {}  # {reason: count}
+        ignoreCount = 0
+        backlogCount = 0
+        total = 0
+
+        if maxTime:
+            minDate = datetime.datetime.now() - datetime.timedelta(seconds=maxTime)
+
+        for eventId in self._eventStats.keys():
+            eventStats = self._eventStats[eventId]
+            if maxTime and eventStats['added_at'] < minDate:
+                if delete:
+                    del(self._eventStats[eventId])
+
+            else:
+                total += 1
+
+                if eventStats.get('backlog'):
+                    backlogCount += 1
+
+                ignoreReason = eventStats.get('ignored')
+                if ignoreReason:
+                    ignored[ignoreReason] = ignored.get(ignoreReason, 0) + 1
+                    ignoreCount += 1
+
+                callbackStats = eventStats.get('callbacks')
+                if callbackStats:
+                    for c in callbackStats:
+                        if c['callback'] not in callbacks:
+                            callbacks[c['callback']] = {
+                                'ignored': {},
+                                'ignoreCount': 0,
+                                'totalDispatch': 0,
+                                'totalProcess': 0,
+                                'handled': 0,
+                                'averageDispatch': 0,
+                                'averageProcess': 0,
+                                'dispatchDeciles': [0 for i in range(0,11)],
+                                'processDeciles': [0 for i in range(0,11)],
+                                'dispatchList': [],
+                                'processList': [],
+                            }
+
+                        cStats = callbacks[c['callback']]
+
+                        ignoreReason = c.get('ignored')
+                        if ignoreReason:
+                            cStats['ignored'][ignoreReason] = cStats['ignored'].get(ignoreReason, 0) + 1
+                            cStats['ignoreCount'] += 1
+
+                        if c.get('handled', False):
+                            cStats['handled'] += 1
+                            cStats['dispatchList'].append(c['dispatch'])
+                            cStats['processList'].append(c['process'])
+                            cStats['totalDispatch'] += c['dispatch']
+                            cStats['totalProcess'] += c['process']
+
+        for c, cdict in callbacks.iteritems():
+            if cdict['handled'] > 0:
+                cdict['averageDispatch'] = cdict['totalDispatch']/cdict['handled']
+                cdict['averageProcess'] = cdict['totalProcess']/cdict['handled']
+                cdict['dispatchDeciles'] = deciles(cdict['dispatchList'])
+                cdict['processDeciles'] = deciles(cdict['processList'])
+                del(cdict['dispatchList'])
+                del(cdict['processList'])
+
+        stats = {
+            'lastEventId': self._lastEventId,
+            'active': self.isActive(),
+
+            'total': total,
+            'globalIgnoreCount': ignoreCount,
+            'globalIgnored': ignored,
+            'callbacks': callbacks,
+            'remainingBacklogCount': len(self._backlog),
+            'handledBacklogCount': backlogCount,
+        }
+
+        return stats
 
     def setState(self, state):
         if isinstance(state, int):
@@ -882,7 +1086,7 @@ class Plugin(object):
         """
         self._engine.setEmailsOnLogger(self.logger, emails)
 
-    def load(self ):
+    def load(self):
         """
         Load/Reload the plugin and all its callbacks.
 
@@ -937,8 +1141,11 @@ class Plugin(object):
         Register a callback in the plugin.
         """
         global sg
-        sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey)
-        self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args, stopOnError))
+        print callback.func_name
+
+        sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey,
+                                  http_proxy=self._engine.config.getEngineProxyServer())
+        # self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args, stopOnError))
 
     def process(self, event, forceEvent=False ):
         self.logger.debug( "Processing %s", event['id'] )
@@ -952,28 +1159,28 @@ class Plugin(object):
             if event['project'] is None:
                 if not self._engine.treatNonProjectEvents:
                     self.logger.debug("Ignoring non project dependent event"
-                                      " %s" % event['id'])
-                    self._updateLastEventId(event['id'])
+                                      " %s" % event)
+                    self._updateLastEventId(event)
                     return self._active
 
             elif event['project']['name'] not in self._engine.projectsToFilter:
                 self.logger.debug("Ignoring event %s from project"
                                   " %s" % (event['id'],
                                            event['project']['name']))
-                self._updateLastEventId(event['id'])
+                self._updateLastEventId(event)
                 return self._active
 
         if event['id'] in self._backlog:
             if self._process(event):
                 self.logger.info('Processed id %d from backlog.' % event['id'])
                 del(self._backlog[event['id']])
-                self._updateLastEventId(event['id'])
+                self._updateLastEventId(event)
         elif self._lastEventId is not None and event['id'] <= self._lastEventId:
             msg = 'Event %d is too old. Last event processed was (%d).'
             self.logger.debug(msg, event['id'], self._lastEventId)
         else:
             if self._process(event):
-                self._updateLastEventId(event['id'])
+                self._updateLastEventId(event)
 
         return self._active
 
@@ -994,13 +1201,26 @@ class Plugin(object):
 
         return self._active
 
-    def _updateLastEventId(self, eventId):
-        if self._lastEventId is not None and eventId > self._lastEventId + 1:
-            expiration = datetime.datetime.now() + datetime.timedelta(minutes=5)
-            for skippedId in range(self._lastEventId + 1, eventId):
-                self.logger.info('Adding event id %d to backlog.', skippedId)
-                self._backlog[skippedId] = expiration
-        self._lastEventId = eventId
+    def _updateLastEventId(self, event):
+        BACKLOG_TIMEOUT = 5 # time in minutes after which we consider a pending event won't happen
+        if self._lastEventId is not None and event["id"] > self._lastEventId + 1:
+            event_date = event["created_at"].replace(tzinfo=None)
+            if datetime.datetime.now() > (event_date + datetime.timedelta(minutes=BACKLOG_TIMEOUT)):
+                # the event we've just processed happened more than BACKLOG_TIMEOUT minutes ago so any event
+                # with a lower id should have shown up in the EventLog by now if it actually happened
+                if event["id"]==self._lastEventId+2:
+                    self.logger.info('Event %d never happened - ignoring.', self._lastEventId+1)
+                else:
+                    self.logger.info('Events %d-%d never happened - ignoring.', self._lastEventId+1, event["id"]-1)
+            else:
+                # in this case, we want to add the missing events to the backlog as they could show up in the
+                # EventLog within BACKLOG_TIMEOUT minutes, during which we'll keep asking for the same range
+                # them to show up until they expire
+                expiration = datetime.datetime.now() + datetime.timedelta(minutes=BACKLOG_TIMEOUT)
+                for skippedId in range(self._lastEventId + 1, event["id"]):
+                    self.logger.info('Adding event id %d to backlog.', skippedId)
+                    self._backlog[skippedId] = expiration
+        self._lastEventId = event["id"]
 
     def __iter__(self):
         """
@@ -1168,8 +1388,8 @@ class Callback(object):
                 stack.append(tb.tb_frame)
                 tb = tb.tb_next
 
-            msg = 'An error occured processing an event : \n%s\n\n%s\n\nLocal variables at outer most frame in plugin:\n\n%s'
-            self._logger.critical(msg, str(erro), traceback.format_exc(), pprint.pformat(stack[1].f_locals))
+            msg = 'An error occured processing an event.\n\n%s\n\nLocal variables at outer most frame in plugin:\n\n%s'
+            self._logger.critical(msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals))
             if self._stopOnError:
                 self._active = False
 
@@ -1206,7 +1426,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
         logging.CRITICAL: 'CRITICAL - Shotgun event daemon.',
     }
 
-    def __init__(self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None, use_ssl=None):
+    def __init__(self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None):
         args = [smtpServer, fromAddr, toAddrs, emailSubject]
         if credentials:
             # Python 2.6 implemented the credentials argument
@@ -1227,10 +1447,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
                 args.append(secure)
             else:
                 self.secure = secure
-            if use_ssl :
-                self.use_ssl = True
-            else :
-                self.use_ssl = None 
+
         logging.handlers.SMTPHandler.__init__(self, *args)
 
     def getSubject(self, record):
@@ -1260,11 +1477,8 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
             port = self.mailport
             if not port:
                 port = smtplib.SMTP_PORT
-            if self.use_ssl is not None :
-                smtp = smtplib.SMTP_SSL(self.mailhost, port)
-                smtp.ehlo()
-            else :
-                smtp = smtplib.SMTP(self.mailhost, port)
+            smtp = smtplib.SMTP()
+            smtp.connect(self.mailhost, port)
             msg = self.format(record)
             msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s" % (
                             self.fromaddr,
@@ -1272,7 +1486,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
                             self.getSubject(record),
                             formatdate(), msg)
             if self.username:
-                if self.secure is not None and self.use_ssl is None :
+                if self.secure is not None:
                     smtp.ehlo()
                     smtp.starttls(*self.secure)
                     smtp.ehlo()
@@ -1300,6 +1514,20 @@ class ConfigError(EventDaemonError):
     Used when an error is detected in the config file.
     """
     pass
+
+def percentile(l, percent):
+    if not l:
+        return None
+    k = (len(l)-1)*percent
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return l[int(k)]
+    return l[int(f)] * (c-k) + l[int(c)] * (k-f)
+
+def deciles(l):
+    l.sort()
+    return [percentile(l, i*0.1) for i in range(11)]
 
 
 if sys.platform == 'win32':
