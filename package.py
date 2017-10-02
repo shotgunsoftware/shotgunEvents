@@ -1,5 +1,5 @@
 name = 'shotgunEvents'
-version = '1.0.2'
+version = 'rc.1.4.0'
 
 requires = ['shotgunPythonApi',
             '!pythonStandalone',]
