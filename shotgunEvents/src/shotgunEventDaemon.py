@@ -759,7 +759,7 @@ class Engine(object):
         # Setup the stdout logger
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-        logging.getLogger().addHandler(handler)
+        #logging.getLogger().addHandler(handler)
         # Retrieve the event
         fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid']
         result = self._sg.find_one("EventLogEntry", filters=[['id', 'is', eventId]], fields=fields )
@@ -1172,7 +1172,7 @@ class Plugin(object):
 
         if event['id'] in self._backlog:
             if self._process(event):
-                self.logger.info('Processed id %d from backlog.' % event['id'])
+                #self.logger.info('Processed id %d from backlog.' % event['id'])
                 del(self._backlog[event['id']])
                 self._updateLastEventId(event)
         elif self._lastEventId is not None and event['id'] <= self._lastEventId:
@@ -1209,16 +1209,20 @@ class Plugin(object):
                 # the event we've just processed happened more than BACKLOG_TIMEOUT minutes ago so any event
                 # with a lower id should have shown up in the EventLog by now if it actually happened
                 if event["id"]==self._lastEventId+2:
-                    self.logger.info('Event %d never happened - ignoring.', self._lastEventId+1)
+                    #self.logger.info('Event %d never happened - ignoring.', self._lastEventId+1)
+                    self._lastEventId + 1
+
                 else:
-                    self.logger.info('Events %d-%d never happened - ignoring.', self._lastEventId+1, event["id"]-1)
+                    #self.logger.info('Events %d-%d never happened - ignoring.', self._lastEventId+1, event["id"]-1)
+                    self._lastEventId + 1
+
             else:
                 # in this case, we want to add the missing events to the backlog as they could show up in the
                 # EventLog within BACKLOG_TIMEOUT minutes, during which we'll keep asking for the same range
                 # them to show up until they expire
                 expiration = datetime.datetime.now() + datetime.timedelta(minutes=BACKLOG_TIMEOUT)
                 for skippedId in range(self._lastEventId + 1, event["id"]):
-                    self.logger.info('Adding event id %d to backlog.', skippedId)
+                    #self.logger.info('Adding event id %d to backlog.', skippedId)
                     self._backlog[skippedId] = expiration
         self._lastEventId = event["id"]
 
