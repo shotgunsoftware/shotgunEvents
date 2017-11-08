@@ -1061,7 +1061,7 @@ class Plugin(object):
         for k in self._backlog.keys():
             v = self._backlog[k]
             if v < now:
-                self.logger.warning('Timeout elapsed on backlog event id %d.', k)
+                # self.logger.warning('Timeout elapsed on backlog event id %d.', k)
                 del(self._backlog[k])
             elif nextId is None or k < nextId:
                 nextId = k
@@ -1206,15 +1206,14 @@ class Plugin(object):
         if self._lastEventId is not None and event["id"] > self._lastEventId + 1:
             event_date = event["created_at"].replace(tzinfo=None)
             if datetime.datetime.now() > (event_date + datetime.timedelta(minutes=BACKLOG_TIMEOUT)):
+                pass
                 # the event we've just processed happened more than BACKLOG_TIMEOUT minutes ago so any event
                 # with a lower id should have shown up in the EventLog by now if it actually happened
-                if event["id"]==self._lastEventId+2:
-                    #self.logger.info('Event %d never happened - ignoring.', self._lastEventId+1)
-                    self._lastEventId + 1
+                # if event["id"]==self._lastEventId+2:
+                #     self.logger.info('Event %d never happened - ignoring.', self._lastEventId+1)
 
-                else:
-                    #self.logger.info('Events %d-%d never happened - ignoring.', self._lastEventId+1, event["id"]-1)
-                    self._lastEventId + 1
+                # else:
+                #     self.logger.info('Events %d-%d never happened - ignoring.', self._lastEventId+1, event["id"]-1)
 
             else:
                 # in this case, we want to add the missing events to the backlog as they could show up in the
