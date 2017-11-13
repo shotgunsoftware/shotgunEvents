@@ -96,7 +96,7 @@ def _setFilePathOnLogger(logger, path):
     _removeHandlersFromLogger(logger, logging.handlers.TimedRotatingFileHandler)
 
     # Add the file handler
-    handler = logging.handlers.TimedRotatingFileHandler(path, 'midnight', backupCount=10)
+    handler = logging.handlers.TimedRotatingFileHandler(path, 'midnight', backupCount=10, encoding='bz2')
     handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     logger.addHandler(handler)
 
