@@ -40,7 +40,7 @@ import json
 import math
 from distutils.version import StrictVersion
 from optparse import OptionParser
-
+import copy
 import os
 
 
@@ -558,25 +558,29 @@ class Engine(object):
         else:
             # No id file?
             # Get the event data from the database.
-            conn_attempts = 0
-            lastEventId = None
-            while lastEventId is None:
-                order = [{'column':'id', 'direction':'desc'}]
-                try:
-                    result = self._sg.find_one("EventLogEntry", filters=[], fields=['id'], order=order)
-                except (sg.ProtocolError, sg.ResponseError, socket.error), err:
-                    conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
-                except Exception, err:
-                    msg = "Unknown error: %s" % str(err)
-                    conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
-                else:
-                    lastEventId = result['id']
-                    self.log.info('Last event id (%d) from the Shotgun database.', lastEventId)
-
-                    for collection in self._pluginCollections:
-                        collection.setState(lastEventId)
-
+            lastEventId = self._getLastEventIdFromDatabase()
+            if lastEventId:
+                for collection in self._pluginCollections:
+                    collection.setState(lastEventId)
             self._saveEventIdData()
+
+    def _getLastEventIdFromDatabase(self):
+        conn_attempts = 0
+        lastEventId = None
+        while lastEventId is None:
+            order = [{'column':'id', 'direction':'desc'}]
+            try:
+                result = self._sg.find_one("EventLogEntry", filters=[], fields=['id'], order=order)
+            except (sg.ProtocolError, sg.ResponseError, socket.error), err:
+                conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
+            except Exception, err:
+                msg = "Unknown error: %s" % str(err)
+                conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
+            else:
+                lastEventId = result['id']
+                self.log.info('Last event id (%d) from the Shotgun database.', lastEventId)
+    
+        return lastEventId
 
     def _mainLoop(self):
         """
@@ -723,6 +727,7 @@ class Engine(object):
         this location to know at which event it should start processing.
         """
         eventIdFile = self.config.getEventIdFile()
+        tmpEventIdFile = os.path.join(os.path.dirname(eventIdFile), ".%s" % os.path.basename(eventIdFile))
 
         if eventIdFile is not None:
 
@@ -736,14 +741,30 @@ class Engine(object):
             for colPath, state in self._eventIdData.items():
                 if state:
                     try:
-                        fh = open(eventIdFile, 'w')
-                        pickle.dump(self._eventIdData, fh)
+                        fh = open(tmpEventIdFile, 'w')
+                        
+                        # cleanup timestamp from data for it to be pickled
+                        # self._eventIdData is a dict of dict of tuple of dict, hence the following mess
+                        cleanData = copy.deepcopy(self._eventIdData)
+                        for path, _dict in cleanData.iteritems():
+                            for plugin, plugintuple in _dict.iteritems():
+                                 for item in plugintuple:
+                                    if isinstance(item, dict):
+                                        for k, v in item.iteritems():
+                                            if isinstance(v, datetime.datetime):
+                                                item[k] = normalizeSgDatetime(v)
+
+                        pickle.dump(cleanData, fh)
                         fh.close()
                     except OSError, err:
-                        self.log.error('Can not write event id data to %s.\n\n%s', eventIdFile, traceback.format_exc(err))
-                    break
+                        self.log.error('Can not write event id data to %s.\n\n%s', tmpEventIdFile, traceback.format_exc(err))
+                    else:
+                        # file was properly pickled at the temporary location, now override the
+                        # last state with this new one
+                        os.rename(tmpEventIdFile, eventIdFile)
             else:
                 self.log.warning('No state was found. Not saving to disk.')
+                return
 
     def _checkConnectionAttempts(self, conn_attempts, msg):
         conn_attempts += 1
@@ -1707,6 +1728,13 @@ def _getConfigPath():
     # No config file was found
     raise EventDaemonError('Config path not found, searched %s' % ', '.join(paths))
 
+def normalizeSgDatetime(datetime):
+    if datetime.tzinfo is None:  # already normalized
+        return datetime
+
+    norm = datetime.astimezone(sg.sg_timezone.local)
+    norm = norm.replace(tzinfo=None)
+    return norm
 
 if __name__ == '__main__':
     sys.exit(main())
