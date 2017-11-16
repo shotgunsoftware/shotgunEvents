@@ -764,7 +764,6 @@ class Engine(object):
                         # last state with this new one
                         os.rename(tmpEventIdFile, eventIdFile)
             else:
-                self.log.warning('No state was found. Not saving to disk.')
                 return
 
     def _checkConnectionAttempts(self, conn_attempts, msg):
