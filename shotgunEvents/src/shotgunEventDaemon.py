@@ -757,7 +757,8 @@ class Engine(object):
                         pickle.dump(cleanData, fh)
                         fh.close()
                     except OSError, err:
-                        self.log.error('Can not write event id data to %s.\n\n%s', tmpEventIdFile, traceback.format_exc(err))
+                        #self.log.error('Can not write event id data to %s.\n\n%s', tmpEventIdFile, traceback.format_exc(err))
+                        pass
                     else:
                         # file was properly pickled at the temporary location, now override the
                         # last state with this new one
