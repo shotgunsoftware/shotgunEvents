@@ -345,8 +345,9 @@ class Engine(object):
             # Set the root logger for file output.
             rootLogger = logging.getLogger()
             rootLogger.config = self.config
+            # print "rootLogger ", rootLogger 
             _setFilePathOnLogger(rootLogger, '%s.%s' % (self.config.getLogFile(), '.stats'))
-            print self.config.getLogFile()
+            self.config.getLogFile()
 
             # Set the engine logger for email output.
             self.log = logging.getLogger('engine')
@@ -780,7 +781,7 @@ class Engine(object):
         # Setup the stdout logger
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-        #logging.getLogger().addHandler(handler)
+        logging.getLogger().addHandler(handler)
         # Retrieve the event
         fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid']
         result = self._sg.find_one("EventLogEntry", filters=[['id', 'is', eventId]], fields=fields )
@@ -1162,11 +1163,10 @@ class Plugin(object):
         Register a callback in the plugin.
         """
         global sg
-        print callback.func_name
-
+        
         sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey,
                                   http_proxy=self._engine.config.getEngineProxyServer())
-        # self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args, stopOnError))
+        self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args, stopOnError))
 
     def process(self, event, forceEvent=False ):
         self.logger.debug( "Processing %s", event['id'] )
@@ -1599,6 +1599,8 @@ class LinuxDaemon(daemonizer.Daemon):
     """
     def __init__(self):
         self._engine = Engine(_getConfigPath())
+        # print "Debug"
+        # print _getConfigPath()
         super(LinuxDaemon, self).__init__('shotgunEvent', self._engine.config.getEnginePIDFile())
 
     def start(self, daemonize=True):
