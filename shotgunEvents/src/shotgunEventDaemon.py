@@ -536,7 +536,7 @@ class Engine(object):
                                 if pluginName in maxPluginStates.keys():
                                     state[pluginName] = maxPluginStates[pluginName]
                                 else:
-                                    state[pluginName][0] = latestEventId
+                                    state[pluginName][0] = lastEventId
                             collection.setState(state)
 
                 except pickle.UnpicklingError:
@@ -965,6 +965,7 @@ class Plugin(object):
         self._callbacks = []
         self._mtime = None
         self._lastEventId = None
+        self._lastEventCreationDate = None
         self._backlog = {}
         self._eventStats = {}
 
@@ -1060,6 +1061,8 @@ class Plugin(object):
             'handledBacklogCount': backlogCount,
         }
 
+        if self._lastEventCreationDate:
+            stats['lastEventIdProcessed'] = str(self._lastEventCreationDate.strftime("%Y-%m-%d %H:%M:%S"))
         return stats
 
     def setState(self, state):
@@ -1245,6 +1248,7 @@ class Plugin(object):
                     #self.logger.info('Adding event id %d to backlog.', skippedId)
                     self._backlog[skippedId] = expiration
         self._lastEventId = event["id"]
+        self._lastEventCreationDate = event['created_at']
 
     def __iter__(self):
         """
