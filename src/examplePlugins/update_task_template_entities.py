@@ -231,6 +231,51 @@ def check_entity_schema(sg, logger, entity_type, field_name, field_types, requir
     return True
 
 
+def dependency_cleanup(sg, logger, template_tasks, entities, task_schema):
+    """
+    When we run update_entities it has a habit of leaving some dependencies
+    pointing back to the task template rather than just within the asset
+    itself. This function does a pass over the newly created dependencies
+    in the asset and cleans out any ones with IDs matching ones in the
+    template.
+
+    :param sg: SG API handle
+    :param logger: Logger instance
+    :param template_tasks: All the Tasks in the template
+    :param entities: All entities attached to the Task Template
+    :param task_schema: the Task schema
+    """
+    template_ids = []
+    # Get all the ids of the tasks in our task template
+    for t_task in template_tasks:
+        template_ids.append(t_task['id'])
+    # Get each task for every entity the template is linked to
+    for entity in entities:
+        # Grab all the Tasks on the entity.
+        tasks = sg.find(
+            "Task",
+            [["entity", "is", entity]],
+            task_schema.keys() + ["template_task"],
+        )
+        # For all the tasks check their up/downstream dependencies
+        # and make sure that they're not linking back to any tasks
+        # with IDs matching those in our task template.
+        # If they are then delete those links to avoid a mess.
+        for task in tasks:
+            if task['downstream_tasks']:
+                for i, ds_task in enumerate(task['downstream_tasks']):
+                    if ds_task['id'] in template_ids:
+                        del task['downstream_tasks'][i]
+                for clean_task in task['downstream_tasks']:
+                    sg.update("Task", task["id"], {'downstream_tasks': [clean_task]})
+            if task['upstream_tasks']:
+                for i, us_task in enumerate(task['upstream_tasks']):
+                    if us_task['id'] in template_ids:
+                        del task['upstream_tasks'][i]
+                for clean_task in task['upstream_tasks']:
+                    sg.update("Task", task["id"], {'upstream_tasks': [clean_task]})
+
+
 def update_entities(sg, logger, event, args):
     """
     Loops over the user-specified summarize items, summarizes them and then
@@ -440,3 +485,6 @@ def update_entities(sg, logger, event, args):
     if batch_delete_data:
         sg.batch(batch_delete_data)
         logger.info("Completed batch delete.")
+    # Clean up dependencies
+    if entities:
+        dependency_cleanup(sg, logger, template_tasks, entities, task_schema)
