@@ -18,3 +18,4 @@ def commands():
 
     env.PYTHONPATH.append(this.root)
     alias('sgDaemon', 'python {root}/shotgunEvents/src/shotgunEventDaemon.py')
+    env.EVENT_STATS_FILE_PATH = '{root}/shotgunEvents/stats.log'

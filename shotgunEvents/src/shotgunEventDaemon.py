@@ -82,6 +82,36 @@ Line: %(lineno)d
 
 ACTIONS = ['start', 'stop', 'restart', 'foreground', 'forceEvents']
 CONFIG_DIRECTORIES = ['/etc', os.path.dirname(__file__)]
+EVENT_STATS_FILE_PATH = os.environ['EVENT_STATS_FILE_PATH']
+
+
+def timeEventLoop(callbackName, duration, eventId):
+    
+    if not os.path.isfile(EVENT_STATS_FILE_PATH):
+        with open(EVENT_STATS_FILE_PATH, 'w+') as newFile:
+            newFile.write(json.dumps({}))
+
+    with open(EVENT_STATS_FILE_PATH, 'r+') as stats:
+        data = json.loads(stats.read())
+        data = data if data else {}
+        # Add one call, and time execution
+        numbOfCalls = data.get(callbackName, {}).get('number_of_calls', 0)
+        numbOfCalls += 1
+        if data.get(callbackName):
+            data[callbackName]['number_of_calls'] = numbOfCalls
+        else:
+          data.update({callbackName: {'number_of_calls': numbOfCalls}})
+
+        execTime = data.get(callbackName, {}).get('execution_time', 0)
+        execTime += duration
+        if data.get(callbackName):
+            data[callbackName]['execution_time'] = execTime
+        else:
+            data.update({callbackName: {'execution_time': execTime}})
+        # Write new data and erase old one
+        stats.seek(0)
+        stats.write(json.dumps(data))
+        stats.truncate()
 
 
 def _setFilePathOnLogger(logger, path):
@@ -1209,6 +1239,7 @@ class Plugin(object):
         return self._active
 
     def _process(self, event):
+        start = time.time()
         for callback in self:
             if callback.isActive():
                 if callback.canProcess(event):
@@ -1222,6 +1253,9 @@ class Plugin(object):
             else:
                 msg = 'Skipping inactive callback %s in plugin.'
                 self.logger.debug(msg, str(callback))
+
+        execDuration = time.time() - start
+        timeEventLoop(self._pluginName, event['id'], execDuration)
 
         return self._active
 
@@ -1395,7 +1429,7 @@ class Callback(object):
     def process(self, event):
         """
         Process an event with the callback object supplied on initialization.
-
+1
         If an error occurs, it will be logged appropriately and the callback
         will be deactivated.
 
@@ -1408,7 +1442,7 @@ class Callback(object):
 
         try:
             self._callback(self._shotgun, self._logger, event, self._args)
-        except Exception as erro:
+        except Exception as error:
             # Get the local variables of the frame of our plugin
             tb = sys.exc_info()[2]
             stack = []
