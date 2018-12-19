@@ -342,7 +342,7 @@ class Engine(object):
         """
         eventIdFile = self.config.getEventIdFile()
 
-        if eventIdFile and os.path.exists(eventIdFile):
+        if eventIdFile and os.path.exists(eventIdFile) and os.path.getsize(eventIdFile) > 0:
             try:
                 fh = open(eventIdFile)
                 try:
