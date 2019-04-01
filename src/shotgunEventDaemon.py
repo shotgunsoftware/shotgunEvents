@@ -957,8 +957,15 @@ class Callback(object):
                 tb = tb.tb_next
 
             msg = 'An error occured processing an event.\n\n%s\n\nLocal variables at outer most frame in plugin:\n\n%s'
-            self._logger.critical(msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals))
-            if self._stopOnError:
+            # If we've gone through the config we do want to see the logs. Right now we don't want to do a big refactor
+            # Can we add a stack trace and retry param to plugins? To the tracebacks? Is that bad practice/too debuggy?
+            formatted_traceback = traceback.format_exc()
+            file_protocol_cycle = "AllConfigsFailed" in formatted_traceback
+            if file_protocol_cycle:
+                msg = msg + "\n\nThe above event will retry until resolved, killed, or crashes in an unhandled way\n\n"
+
+            self._logger.critical(msg, formatted_traceback, pprint.pformat(stack[1].f_locals))
+            if not file_protocol_cycle and self._stopOnError:
                 self._active = False
 
         return self._active
