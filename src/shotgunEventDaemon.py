@@ -789,11 +789,15 @@ class Plugin(object):
                 if callback.canProcess(event):
                     msg = 'Dispatching event %d to callback %s.'
                     self.logger.debug(msg, event['id'], str(callback))
-                    if not callback.process(event):
+                    process_status = callback.process(event)
+                    if not process_status:
                         # A callback in the plugin failed. Deactivate the whole
                         # plugin.
                         self._active = False
                         break
+                    elif isinstance(process_status, str):
+                        self.logger.debug("Retry conditions detected for %s", str(callback))
+                        return False
             else:
                 msg = 'Skipping inactive callback %s in plugin.'
                 self.logger.debug(msg, str(callback))
@@ -967,6 +971,8 @@ class Callback(object):
             self._logger.critical(msg, formatted_traceback, pprint.pformat(stack[1].f_locals))
             if not file_protocol_cycle and self._stopOnError:
                 self._active = False
+            elif file_protocol_cycle:
+                return str(event['session_uuid'])
 
         return self._active
 
