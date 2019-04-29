@@ -683,10 +683,10 @@ class Plugin(object):
         now = datetime.datetime.now()
         for k in self._backlog.keys():
             v = self._backlog[k]
-            # if v < now:  # Skip the skip block
-                # self.logger.warning('Timeout elapsed on backlog event id %d.', k)
-                # del(self._backlog[k])
-            if nextId is None or k < nextId:
+            if v < now:  # Look around here to not cut events from timeouts
+                self.logger.warning('Timeout elapsed on backlog event id %d.', k)
+                del(self._backlog[k])
+            elif nextId is None or k < nextId:
                 nextId = k
 
         return nextId
@@ -774,10 +774,10 @@ class Plugin(object):
                 self.logger.info('Processed id %d from backlog.' % event['id'])
                 del(self._backlog[event['id']])
                 self._updateLastEventId(event)
-	# This block skips events. It's handy for the other plugins, but btter not
-        # elif self._lastEventId is not None and event['id'] <= self._lastEventId:
-            # msg = 'Event %d is too old. Last event processed was (%d).'
-            # self.logger.debug(msg, event['id'], self._lastEventId)
+	# This block skips events. Let's see how we can understand it and not.
+        elif self._lastEventId is not None and event['id'] <= self._lastEventId:
+            msg = 'Event %d is too old. Last event processed was (%d).'
+            self.logger.debug(msg, event['id'], self._lastEventId)
         else:
             if self._process(event):
                 self._updateLastEventId(event)
