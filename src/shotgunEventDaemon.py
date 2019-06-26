@@ -359,7 +359,7 @@ class Engine(object):
         """
         eventIdFile = self.config.getEventIdFile()
 
-        if eventIdFile and os.path.exists(eventIdFile):
+        if eventIdFile and os.path.exists(eventIdFile) and os.path.getsize(eventIdFile) > 0:
             try:
                 fh = open(eventIdFile)
                 try:
@@ -700,7 +700,7 @@ class Plugin(object):
         now = datetime.datetime.now()
         for k in self._backlog.keys():
             v = self._backlog[k]
-            if v < now:
+            if v < now:  # Look around here to not cut events from timeouts
                 self.logger.warning('Timeout elapsed on backlog event id %d.', k)
                 del(self._backlog[k])
             elif nextId is None or k < nextId:
@@ -791,6 +791,7 @@ class Plugin(object):
                 self.logger.info('Processed id %d from backlog.' % event['id'])
                 del(self._backlog[event['id']])
                 self._updateLastEventId(event)
+	# This block skips events. Let's see how we can understand it and not.
         elif self._lastEventId is not None and event['id'] <= self._lastEventId:
             msg = 'Event %d is too old. Last event processed was (%d).'
             self.logger.debug(msg, event['id'], self._lastEventId)
@@ -806,11 +807,15 @@ class Plugin(object):
                 if callback.canProcess(event):
                     msg = 'Dispatching event %d to callback %s.'
                     self.logger.debug(msg, event['id'], str(callback))
-                    if not callback.process(event):
+                    process_status = callback.process(event)
+                    if not process_status:
                         # A callback in the plugin failed. Deactivate the whole
                         # plugin.
                         self._active = False
                         break
+                    elif isinstance(process_status, str):
+                        self.logger.debug("Retry conditions detected for %s", str(callback))
+                        return False
             else:
                 msg = 'Skipping inactive callback %s in plugin.'
                 self.logger.debug(msg, str(callback))
@@ -980,9 +985,18 @@ class Callback(object):
                 tb = tb.tb_next
 
             msg = 'An error occured processing an event.\n\n%s\n\nLocal variables at outer most frame in plugin:\n\n%s'
-            self._logger.critical(msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals))
-            if self._stopOnError:
+            # If we've gone through the config we do want to see the logs. Right now we don't want to do a big refactor
+            # Can we add a stack trace and retry param to plugins? To the tracebacks? Is that bad practice/too debuggy?
+            formatted_traceback = traceback.format_exc()
+            file_protocol_cycle = "AllConfigsFailed" in formatted_traceback
+            if file_protocol_cycle:
+                msg = msg + "\n\nThe above event will retry until resolved, killed, or crashes in an unhandled way\n\n"
+
+            self._logger.critical(msg, formatted_traceback, pprint.pformat(stack[1].f_locals))
+            if not file_protocol_cycle and self._stopOnError:
                 self._active = False
+            elif file_protocol_cycle:
+                return str(event['session_uuid'])
 
         if self._engine.timing_logger:
             callback_name = self._logger.name.replace('plugin.', '')
