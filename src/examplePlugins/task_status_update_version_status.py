@@ -58,7 +58,7 @@ def is_valid(sg, logger, args):
     # Make sure we have a valid sg connection.
     try:
         sg.find_one("Project", [])
-    except Exception, e:
+    except Exception as e:
         logger.warning(e)
         return
 
@@ -146,7 +146,7 @@ def task_status_changed(sg, logger, event, args):
             {"sg_status_list": new_task_status[status_mapping_field]},
         )
         logger.debug("Result is: %s" % result)
-    except Exception, e:
+    except Exception as e:
         logger.warning(
             "Could not update Version with id %s to Status %s: %s" % (
                 sg_version["id"],

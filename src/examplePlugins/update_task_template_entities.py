@@ -81,7 +81,7 @@ def is_valid(sg, logger, args):
     }
 
     # Check our args.
-    for name, checks in args_to_check.iteritems():
+    for name, checks in args_to_check.items():
 
         # Grab the setting's value type.
         value_type = type(args[name])
@@ -89,7 +89,7 @@ def is_valid(sg, logger, args):
         # We assume unicode and str to be equivalent for these checks because
         # args come back from Django as unicode but are first set by the
         # Registrar as str.
-        if value_type == unicode:
+        if value_type == str:
             value_type = str
 
         # Make sure the setting value is the correct Python type.
@@ -142,7 +142,7 @@ def is_valid(sg, logger, args):
     # Make sure the fields the user wants to exclude exist.
     task_schema = sg.schema_field_read("Task")
     for field in args["exclude_fields"]:
-        if field not in task_schema.keys():
+        if field not in list(task_schema.keys()):
             logger.warning("Field %s is not in the Task schema, please fix." % field)
             return
 
@@ -172,7 +172,7 @@ def check_entity_schema(sg, logger, entity_type, field_name, field_types, requir
     # Make sure we can read the schema.
     try:
         entity_schema = sg.schema_field_read(entity_type)
-    except Exception, e:
+    except Exception as e:
         logger.warning(
             "Can't read Shotgun schema for entity \"%s\": %s" % (
                 entity_type,
@@ -266,7 +266,7 @@ def update_entities(sg, logger, event, args):
 
     # Remove any Task fields from the schema that we aren't allowed to edit.
     task_schema_copy = task_schema.copy()
-    for field, value in task_schema.iteritems():
+    for field, value in task_schema.items():
         if value["editable"]["value"] is False:
             del task_schema_copy[field]
     task_schema = task_schema_copy
@@ -275,7 +275,7 @@ def update_entities(sg, logger, event, args):
     template_tasks = sg.find(
         "Task",
         [["task_template", "is", task_template]],
-        task_schema.keys(),
+        list(task_schema.keys()),
     )
 
     # Grab Project records based on project_ids args.
@@ -315,7 +315,7 @@ def update_entities(sg, logger, event, args):
             tasks = sg.find(
                 "Task",
                 [["entity", "is", entity]],
-                task_schema.keys() + ["template_task"],
+                list(task_schema.keys()) + ["template_task"],
             )
 
             # Loop over the entity's Tasks.
@@ -338,15 +338,15 @@ def update_entities(sg, logger, event, args):
 
                         # Gather non-empty field info in our template_data dict.
                         template_data = {}
-                        for field, value in template_task.iteritems():
-                            if value and field in task_schema.keys():
+                        for field, value in template_task.items():
+                            if value and field in list(task_schema.keys()):
                                 template_data[field] = value
 
                         # Init our data update dict.
                         data = {}
 
                         # Loop over the fields.
-                        for field, value in task.iteritems():
+                        for field, value in task.items():
 
                             # Determine if we're going to write the value.
                             write_value = False
@@ -405,8 +405,8 @@ def update_entities(sg, logger, event, args):
 
                 # Add any non-empty field info to our data dict.
                 data = {}
-                for field, value in template_task.iteritems():
-                    if value and field in task_schema.keys():
+                for field, value in template_task.items():
+                    if value and field in list(task_schema.keys()):
                         data[field] = value
 
                 # Add the entity and Project.

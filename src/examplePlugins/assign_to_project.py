@@ -56,7 +56,7 @@ def is_valid(sg, logger):
     # Make sure we have a valid sg connection.
     try:
         sg.find_one("Project", [])
-    except Exception, e:
+    except Exception as e:
         logger.warning(e)
         return
 

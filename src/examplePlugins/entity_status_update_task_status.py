@@ -93,7 +93,7 @@ def is_valid(sg, logger, args):
             args["entity_type"],
             field_name=args["entity_status_field"],
         )
-    except Exception, e:
+    except Exception as e:
         logger.warning(
             "%s does not exist in %s schema, skipping: %s" % (
                 args["entity_status_field"],

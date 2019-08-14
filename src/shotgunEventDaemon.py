@@ -25,10 +25,12 @@ http://shotgunsoftware.github.com/shotgunEvents
 
 __version__ = '0.9'
 __version_info__ = (0, 9)
+try:
+    import configparser
+except ImportError:
+    import ConfigParser as configparser
 
-import ConfigParser
 import datetime
-import imp
 import logging
 import logging.handlers
 import os
@@ -41,7 +43,7 @@ import traceback
 from distutils.version import StrictVersion
 
 try:
-    import cPickle as pickle
+    import pickle as pickle
 except ImportError:
     import pickle
 
@@ -127,12 +129,37 @@ def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject,
         mailFormatter = logging.Formatter(EMAIL_FORMAT_STRING)
         mailHandler.setFormatter(mailFormatter)
 
-        logger.addHandler(mailHandler)
+        logger.addHandler(mailHandler)       
+# https://github.com/epfl-scitas/spack/blob/af6a3556c4c861148b8e1adc2637685932f4b08a/lib/spack/llnl/util/lang.py#L595-L622
+def load_module_from_file(module_name, module_path):
+    """Loads a python module from the path of the corresponding file.
+    Args:
+        module_name (str): namespace where the python module will be loaded,
+            e.g. ``foo.bar``
+        module_path (str): path of the python file containing the module
+    Returns:
+        A valid module object
+    Raises:
+        ImportError: when the module can't be loaded
+        FileNotFoundError: when module_path doesn't exist
+    """
+    if sys.version_info[0] == 3 and sys.version_info[1] >= 5:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    elif sys.version_info[0] == 3 and sys.version_info[1] < 5:
+        import importlib.machinery
+        loader = importlib.machinery.SourceFileLoader(module_name, module_path)
+        module = loader.load_module()
+    elif sys.version_info[0] == 2:
+        import imp
+        module = imp.load_source(module_name, module_path)
+    return module
 
-
-class Config(ConfigParser.ConfigParser):
+class Config(configparser.ConfigParser):
     def __init__(self, path):
-        ConfigParser.ConfigParser.__init__(self)
+        configparser.ConfigParser.__init__(self)
         self.read(path)
 
     def getShotgunURL(self):
@@ -150,7 +177,7 @@ class Config(ConfigParser.ConfigParser):
             if not proxy_server:
                 return None
             return proxy_server
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             return None
 
     def getEventIdFile(self):
@@ -267,7 +294,7 @@ class Engine(object):
             rootLogger = logging.getLogger()
             rootLogger.config = self.config
             _setFilePathOnLogger(rootLogger, self.config.getLogFile())
-            print self.config.getLogFile()
+            print(self.config.getLogFile())
 
             # Set the engine logger for email output.
             self.log = logging.getLogger('engine')
@@ -344,7 +371,7 @@ class Engine(object):
             self._mainLoop()
         except KeyboardInterrupt:
             self.log.warning('Keyboard interrupt. Cleaning up...')
-        except Exception, err:
+        except Exception as err:
             msg = 'Crash!!!!! Unexpected error (%s) in main loop.\n\n%s'
             self.log.critical(msg, type(err), traceback.format_exc(err))
 
@@ -361,7 +388,7 @@ class Engine(object):
 
         if eventIdFile and os.path.exists(eventIdFile):
             try:
-                fh = open(eventIdFile)
+                fh = open(eventIdFile, 'rb')
                 try:
                     self._eventIdData = pickle.load(fh)
 
@@ -384,9 +411,9 @@ class Engine(object):
                     # in Shotgun.
                     if noStateCollections:
                         maxPluginStates = {}
-                        for collection in self._eventIdData.values():
-                            for pluginName, pluginState in collection.items():
-                                if pluginName in maxPluginStates.keys():
+                        for collection in list(self._eventIdData.values()):
+                            for pluginName, pluginState in list(collection.items()):
+                                if pluginName in list(maxPluginStates.keys()):
                                     if pluginState[0] > maxPluginStates[pluginName][0]:
                                         maxPluginStates[pluginName] = pluginState
                                 else:
@@ -395,8 +422,8 @@ class Engine(object):
                         lastEventId = self._getLastEventIdFromDatabase()
                         for collection in noStateCollections:
                             state = collection.getState()
-                            for pluginName in state.keys():
-                                if pluginName in maxPluginStates.keys():
+                            for pluginName in list(state.keys()):
+                                if pluginName in list(maxPluginStates.keys()):
                                     state[pluginName] = maxPluginStates[pluginName]
                                 else:
                                     state[pluginName] = lastEventId
@@ -417,7 +444,7 @@ class Engine(object):
                         for collection in self._pluginCollections:
                             collection.setState(lastEventId)
                 fh.close()
-            except OSError, err:
+            except OSError as err:
                 raise EventDaemonError('Could not load event id from file.\n\n%s' % traceback.format_exc(err))
         else:
             # No id file?
@@ -437,9 +464,9 @@ class Engine(object):
             order = [{'column':'id', 'direction':'desc'}]
             try:
                 result = self._sg.find_one("EventLogEntry", filters=[], fields=['id'], order=order)
-            except (sg.ProtocolError, sg.ResponseError, socket.error), err:
+            except (sg.ProtocolError, sg.ResponseError, socket.error) as err:
                 conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
-            except Exception, err:
+            except Exception as err:
                 msg = "Unknown error: %s" % str(err)
                 conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
             else:
@@ -520,9 +547,9 @@ class Engine(object):
                     if events:
                         self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
                     return events
-                except (sg.ProtocolError, sg.ResponseError, socket.error), err:
+                except (sg.ProtocolError, sg.ResponseError, socket.error) as err:
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
-                except Exception, err:
+                except Exception as err:
                     msg = "Unknown error: %s" % str(err)
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
 
@@ -541,13 +568,13 @@ class Engine(object):
             for collection in self._pluginCollections:
                 self._eventIdData[collection.path] = collection.getState()
 
-            for colPath, state in self._eventIdData.items():
+            for colPath, state in list(self._eventIdData.items()):
                 if state:
                     try:
-                        fh = open(eventIdFile, 'w')
+                        fh = open(eventIdFile, 'wb')
                         pickle.dump(self._eventIdData, fh)
                         fh.close()
-                    except OSError, err:
+                    except OSError as err:
                         self.log.error('Can not write event id data to %s.\n\n%s', eventIdFile, traceback.format_exc(err))
                     break
             else:
@@ -698,7 +725,7 @@ class Plugin(object):
             nextId = None
 
         now = datetime.datetime.now()
-        for k in self._backlog.keys():
+        for k in list(self._backlog.keys()):
             v = self._backlog[k]
             if v < now:
                 self.logger.warning('Timeout elapsed on backlog event id %d.', k)
@@ -759,7 +786,7 @@ class Plugin(object):
         self._active = True
 
         try:
-            plugin = imp.load_source(self._pluginName, self._path)
+            plugin = load_module_from_file(self._pluginName, self._path)
         except:
             self._active = False
             self.logger.error('Could not load the plugin at %s.\n\n%s', self._path, traceback.format_exc())
@@ -1204,9 +1231,9 @@ def main():
             func()
             return 0
 
-        print "Unknown command: %s" % action
+        print("Unknown command: %s" % action)
 
-    print "usage: %s start|stop|restart|foreground" % sys.argv[0]
+    print("usage: %s start|stop|restart|foreground" % sys.argv[0])
     return 2
 
 

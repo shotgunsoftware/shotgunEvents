@@ -7,7 +7,7 @@
 
 # See docs folder for detailed usage info.
 
-from __future__ import division
+
 import os
 import shotgun_api3
 
@@ -80,7 +80,7 @@ def check_entity_schema(sg, logger, entity_type, field_name, field_type):
     # Make sure we can read the schema.
     try:
         entity_schema = sg.schema_field_read(entity_type)
-    except Exception, e:
+    except Exception as e:
         logger.warning(
             "Can't read Shotgun schema for entity \"%s\": %s" % (
                 entity_type,
@@ -166,7 +166,7 @@ def is_valid(sg, logger, args):
     # Make sure we can read the entity_type's schema.
     try:
         sg.schema_field_read(args["entity_type"])
-    except Exception, e:
+    except Exception as e:
         logger.warning(
             "Can't read Shotgun schema for \"entity_type\" setting's value (\"%s\"): %s" % (
                 args["entity_type"],
@@ -182,7 +182,7 @@ def is_valid(sg, logger, args):
         )
         return
 
-    for name, checks in args_to_check.iteritems():
+    for name, checks in args_to_check.items():
 
         # Grab the setting's value type.
         value_type = type(args[name])
@@ -293,7 +293,7 @@ def update_field_value(sg, logger, event, args):
             num_1 = float(entity[field_a_val])
         if not num_2 and entity[field_b_val] is not None:
             num_2 = float(entity[field_b_val])
-    except Exception, e:
+    except Exception as e:
         logger.error("Couldn't use field value, skipping: %s" % str(e))
         return
 
@@ -344,7 +344,7 @@ def update_field_value(sg, logger, event, args):
             entity_id,
             {args["field_to_update"]: result},
         )
-    except Exception, e:
+    except Exception as e:
         logger.error("Could not update Shotgun, skipping: %s" % str(e))
         return
 

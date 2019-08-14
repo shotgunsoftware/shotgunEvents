@@ -69,7 +69,7 @@ def is_valid(sg, logger, args):
     # Make sure we can read the entity_type's schema.
     try:
         entity_schema = sg.schema_field_read(args["entity_type"])
-    except Exception, e:
+    except Exception as e:
         logger.warning(
             "Can't read Shotgun schema for \"entity_type\" args's value (\"%s\"): %s" % (
                 args["entity_type"],
@@ -78,7 +78,7 @@ def is_valid(sg, logger, args):
         )
         return
 
-    for name, checks in args_to_check.iteritems():
+    for name, checks in args_to_check.items():
 
         # Grab the arg's value type.
         value_type = type(args[name]).__name__
@@ -130,7 +130,7 @@ def is_valid(sg, logger, args):
                 "float": ["float"],
             }
 
-            for field_name, field_value in args[name].iteritems():
+            for field_name, field_value in args[name].items():
                 field_value_type = type(field_value).__name__
 
                 # We assume unicode and str to be equivalent for these checks because
@@ -141,7 +141,7 @@ def is_valid(sg, logger, args):
 
                 # First, let's make sure the field is valid for our
                 # entity type.
-                if field_name not in entity_schema.keys():
+                if field_name not in list(entity_schema.keys()):
                     logger.warning(
                         "%s entity field \"%s\" does not exist in Shotgun, please fix." % (
                             args["entity_type"],
@@ -207,7 +207,7 @@ def init_entity(sg, logger, event, args):
 
     # Re-query the entity so we don't clobber a value that may have
     # been populated by a user
-    fields_to_update = args["initial_data"].keys()
+    fields_to_update = list(args["initial_data"].keys())
     entity = sg.find_one(
         entity_type,
         args["filters"] + [["id", "is", entity_id]],
@@ -227,9 +227,9 @@ def init_entity(sg, logger, event, args):
 
     update_data = {}
     # Convert anything that's currently unicode to a string.
-    for key, value in args["initial_data"].iteritems():
+    for key, value in args["initial_data"].items():
         key = str(key)
-        if isinstance(value, unicode):
+        if isinstance(value, str):
             value = str(value)
 
         # If the field is already populated, don't clobber it unless

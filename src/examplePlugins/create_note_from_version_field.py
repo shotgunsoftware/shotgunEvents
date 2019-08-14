@@ -62,12 +62,12 @@ def is_valid(sg, logger, args):
         "author_is_artist": {"type": [bool], "allow_empty": False},
     }
 
-    for name, checks in args_to_check.iteritems():
+    for name, checks in args_to_check.items():
 
         # Bail if we're missing any required args.
         try:
             args[name]
-        except Exception, e:
+        except Exception as e:
             logger.warning("Missing arg: %s." % name)
             return
 
@@ -95,7 +95,7 @@ def is_valid(sg, logger, args):
     # Make sure we can read the Version schema.
     try:
         version_schema = sg.schema_field_read("Version")
-    except Exception, e:
+    except Exception as e:
         logger.warning(
             "Can't read Shotgun schema for \"entity_type\" args's value (\"%s\"): %s" % (
                 args["entity_type"],
@@ -112,7 +112,7 @@ def is_valid(sg, logger, args):
     # Make sure we can read the Version schema.
     try:
         note_schema = sg.schema_field_read("Note")
-    except Exception, e:
+    except Exception as e:
         logger.warning(
             "Can't read Shotgun schema for \"entity_type\" args's value (\"%s\"): %s" % (
                 args["entity_type"],
@@ -220,7 +220,7 @@ def version_content_changed(sg, logger, event, args):
         logger.debug("Result is: %s" % note)
         logger.info("Created Note with id %s." % note["id"])
 
-    except Exception, e:
+    except Exception as e:
         logger.error("Could not create Note from Version with id %s: %s" % (
             version["id"], str(e))
         )
