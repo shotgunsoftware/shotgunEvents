@@ -287,14 +287,14 @@ class Engine(object):
             print(self.config.getLogFile())
 
             # Set the engine logger for email output.
-            self.log = logging.getLogger("engine")
-            self.setEmailsOnLogger(self.log, True)
+            self.log = logging.getLogger('engine')
+            self.setEmailsOnLogger(self.log, self.config.getboolean('emails', 'enabled'))
         else:
             # Set the engine logger for file and email output.
             self.log = logging.getLogger("engine")
             self.log.config = self.config
             _setFilePathOnLogger(self.log, self.config.getLogFile())
-            self.setEmailsOnLogger(self.log, True)
+            self.setEmailsOnLogger(self.log, self.config.getboolean('emails', 'enabled'))
 
         self.log.setLevel(self.config.getLogLevel())
 
@@ -315,7 +315,7 @@ class Engine(object):
 
         if emails is False:
             return
-
+n
         smtpServer = self.config.getSMTPServer()
         smtpPort = self.config.getSMTPPort()
         fromAddr = self.config.getFromAddr()
@@ -748,7 +748,8 @@ class Plugin(object):
         # Setup the plugin's logger
         self.logger = logging.getLogger("plugin." + self.getName())
         self.logger.config = self._engine.config
-        self._engine.setEmailsOnLogger(self.logger, True)
+        if self._engine.config.getboolean('emails', 'enabled'):
+            self._engine.setEmailsOnLogger(self.logger, True)
         self.logger.setLevel(self._engine.config.getLogLevel())
         if self._engine.config.getLogMode() == 1:
             _setFilePathOnLogger(
