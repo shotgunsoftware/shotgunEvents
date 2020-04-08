@@ -56,3 +56,17 @@ A plugin handles:
 ## Documentation
 
 See the [GitHub Wiki](https://github.com/shotgunsoftware/shotgunEvents/wiki).
+
+## Docker
+
+### Pre-built image
+
+```docker run ncareau/shotgunevents```
+
+-v conf
+-v plugins
+
+### Build image
+
+``` docker build . -t shotgunevents ```
+``` docker run shotgunevents ```
