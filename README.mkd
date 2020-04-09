@@ -61,12 +61,24 @@ See the [GitHub Wiki](https://github.com/shotgunsoftware/shotgunEvents/wiki).
 
 ### Pre-built image
 
-```docker run ncareau/shotgunevents```
+You can run a prebuilt image using the following command.
 
--v conf
--v plugins
+```shell
+docker run \
+    -v ./shotgunEventDaemon.conf:/app/src/shotgunEventDaemon.conf
+    -v ./plugins:/app/src/
+    -v ./data:/var/log/shotgunEventDaemon
+    ncareau/shotgunevents
+```
 
-### Build image
+### Build custom image
 
-``` docker build . -t shotgunevents ```
-``` docker run shotgunevents ```
+You can build a custom image with your plugins and/or your configuration file included with the following commands
+
+```shell
+# Build image
+docker build . -t shotgunevents 
+
+# Run 
+docker run -v ./data:/var/log/shotgunEventDaemon shotgunevents
+```
