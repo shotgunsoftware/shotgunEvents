@@ -56,3 +56,33 @@ A plugin handles:
 ## Documentation
 
 See the [GitHub Wiki](https://github.com/shotgunsoftware/shotgunEvents/wiki).
+
+## Docker
+
+### Pre-built image
+
+You can run a prebuilt image using the following command.
+
+```shell
+# Get the latest conf example file
+curl -o shotgunEventDaemon.conf https://raw.githubusercontent.com/shotgunsoftware/shotgunEvents/master/src/shotgunEventDaemon.conf.example 
+
+# Run docker image
+docker run \
+    -v ./shotgunEventDaemon.conf:/app/src/shotgunEventDaemon.conf
+    -v ./plugins:/app/src/
+    -v ./data:/var/log/shotgunEventDaemon
+    ncareau/shotgunevents
+```
+
+### Build custom image
+
+You can build a custom image to include your plugins and/or your configuration file with the following commands :
+
+```shell
+# Build image
+docker build . -t shotgunevents 
+
+# Run 
+docker run -v ./data:/var/log/shotgunEventDaemon shotgunevents
+```
