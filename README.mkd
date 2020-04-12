@@ -64,6 +64,10 @@ See the [GitHub Wiki](https://github.com/shotgunsoftware/shotgunEvents/wiki).
 You can run a prebuilt image using the following command.
 
 ```shell
+# Get the latest conf example file
+curl -o shotgunEventDaemon.conf https://raw.githubusercontent.com/shotgunsoftware/shotgunEvents/master/src/shotgunEventDaemon.conf.example 
+
+# Run docker image
 docker run \
     -v ./shotgunEventDaemon.conf:/app/src/shotgunEventDaemon.conf
     -v ./plugins:/app/src/
@@ -73,7 +77,7 @@ docker run \
 
 ### Build custom image
 
-You can build a custom image with your plugins and/or your configuration file included with the following commands
+You can build a custom image to include your plugins and/or your configuration file with the following commands :
 
 ```shell
 # Build image
