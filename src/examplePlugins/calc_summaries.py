@@ -240,7 +240,7 @@ def is_valid(sg, logger, args):
     return True
 
 
-def check_entity_schema(sg, entity_type, field_name, field_type=None):
+def check_entity_schema(sg, logger, entity_type, field_name, field_type=None):
     """
     Verifies that field_name of field_type exists in entity_type's schema.
 
