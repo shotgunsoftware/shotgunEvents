@@ -37,6 +37,7 @@ import socket
 import sys
 import time
 import traceback
+import re
 
 from distutils.version import StrictVersion
 
@@ -55,6 +56,10 @@ import daemonizer
 import shotgun_api3 as sg
 from shotgun_api3.lib.sgtimezone import SgTimezone
 
+try:
+    import sentry_sdk
+except ImportError:
+    sentry_sdk = None
 
 SG_TIMEZONE = SgTimezone()
 CURRENT_PYTHON_VERSION = StrictVersion(sys.version.split()[0])
@@ -128,6 +133,22 @@ def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject,
         mailHandler.setFormatter(mailFormatter)
 
         logger.addHandler(mailHandler)
+
+
+def _sentry_pre_send(event, hint):
+    if 'level' in event['extra']:
+        event['level'] = event['extra']['level']
+        del(event['extra']['level'])
+
+    sentry_tags = ['plugin_name', 'stop_on_error', 'event_id']
+    for _sentry_tag in sentry_tags:
+        if _sentry_tag in event['extra']:
+            if 'tags' not in event:
+                event['tags'] = {}
+            event['tags'][_sentry_tag] = event['extra'][_sentry_tag]
+            del(event['extra'][_sentry_tag])
+
+    return event
 
 
 class Config(ConfigParser.ConfigParser):
@@ -233,6 +254,11 @@ class Config(ConfigParser.ConfigParser):
 
         return self.getLogFile() + '.timing'
 
+    def getSentryDsn(self):
+        if self.has_option('sentry', 'sentry_dsn') and self.get('sentry', 'sentry_dsn'):
+            return self.get('sentry', 'sentry_dsn')
+        else:
+            return None
 
 class Engine(object):
     """
@@ -247,6 +273,8 @@ class Engine(object):
 
         # Read/parse the config
         self.config = Config(configPath)
+
+        self.set_sentry_notification()
 
         # Get config values
         self._pluginCollections = [PluginCollection(self, s) for s in self.config.getPluginPaths()]
@@ -321,6 +349,15 @@ class Engine(object):
         _addMailHandlerToLogger(
             logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure
         )
+
+    def set_sentry_notification(self):
+        sentry_dsn = self.config.getSentryDsn()
+        if sentry_dsn:
+            sentry_sdk.init(dsn=sentry_dsn, ignore_errors=[KeyboardInterrupt], before_send=_sentry_pre_send)
+            with sentry_sdk.configure_scope() as scope:
+                shotgun_account_name = re.match('.*://(.*).shotgunstudio.com', self.config.getShotgunURL()).group(1)
+                scope.set_tag("shotgun_account", shotgun_account_name)
+                scope.level = 'fatal'
 
     def start(self):
         """
@@ -908,6 +945,7 @@ class Callback(object):
 
         self._name = None
         self._shotgun = shotgun
+        self._plugin = plugin
         self._callback = callback
         self._engine = engine
         self._logger = None
@@ -980,7 +1018,20 @@ class Callback(object):
                 tb = tb.tb_next
 
             msg = 'An error occured processing an event.\n\n%s\n\nLocal variables at outer most frame in plugin:\n\n%s'
-            self._logger.critical(msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals))
+            if sentry_sdk is not None:
+                _sen_extra = {'plugin_name': self._plugin.getName(),
+                              'event_id': str(event['id']),
+                              'stop_on_error': str(self._stopOnError)}
+                if self._stopOnError:
+                    _sen_extra['level'] = 'error'
+                    msg = 'An error occured processing an event.'
+                    msg += '\nStopOnError is True, so skipping the plugin from daemon.'
+                    msg += '\n\n%s\n\nLocal variables at outer most frame in plugin:\n\n%s'
+                else:
+                    _sen_extra['level'] = 'warning'
+                self._logger.critical(msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals), extra=_sen_extra)
+            else:
+                self._logger.critical(msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals))
             if self._stopOnError:
                 self._active = False
 

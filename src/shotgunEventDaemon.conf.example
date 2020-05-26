@@ -110,18 +110,21 @@ paths: /usr/local/shotgun/plugins
 # values can be uncommented to supply credentials for the smtp connection. The
 # smtp port can also be uncommented to supply an alternate port such as 587 for
 # GMail TLS SMTP. As for the useTLS parameter, it is a True/False value.
-server: smtp.yourdomain.com
+server:
 #port: 587
 #useTLS: True
 #username: yourSMTPUsername
 #password: yourSMPTPassword
 
 # The from address that should be used in emails.
-from: support@yourdomain.com
+from:
 
 # A comma delimited list of email addresses to whom these alerts should be sent.
-to: you@yourdomain.com
+to:
 
 # An email subject prefix that can be used by mail clients to help sort out
 # alerts sent by the Shotgun event framework.
-subject: [SG]
+subject:
+
+[sentry]
+sentry_dsn:
