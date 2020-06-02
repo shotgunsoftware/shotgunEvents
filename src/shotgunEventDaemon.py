@@ -62,7 +62,12 @@ except ImportError:
     sentry_sdk = None
 
 SG_TIMEZONE = SgTimezone()
-CURRENT_PYTHON_VERSION = StrictVersion(sys.version.split()[0])
+# dealing with python version 2.7.15+, maybe some other solution out there but updated it without much research
+if sys.version.split()[0] == '2.7.15+':
+    _p_version = '2.7.15'
+else:
+    _p_version = sys.version.split()[0]
+CURRENT_PYTHON_VERSION = StrictVersion(_p_version)
 PYTHON_25 = StrictVersion('2.5')
 PYTHON_26 = StrictVersion('2.6')
 PYTHON_27 = StrictVersion('2.7')
