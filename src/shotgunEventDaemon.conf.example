@@ -4,14 +4,14 @@
 # The pidFile is the location where the daemon will store its process id. If
 # this file is removed while the daemon is running, it will shutdown cleanly
 # after the next pass through the event processing loop.
-pidFile: /var/log/shotgunEventDaemon/shotgunEventDaemon.pid
+pidFile: /usr/local/shotgun/logs/shotgunEventDaemon/shotgunEventDaemon.pid
 
 # The eventIdFile is the location where the daemon will store the id of the last
 # processed event. This will allow the daemon to pick up where it left off when
 # last shutdown thus not missing any events. If you want to ignore any events
 # since last daemon shutdown, remove this file before daemon startup and the
 # daemon will process only new events created after startup.
-eventIdFile: /var/log/shotgunEventDaemon/shotgunEventDaemon.id
+eventIdFile: /usr/local/shotgun/logs/shotgunEventDaemon/shotgunEventDaemon.id
 
 # The logging mode to operate in:
 # 0 = all log message in the main log file
@@ -19,7 +19,7 @@ eventIdFile: /var/log/shotgunEventDaemon/shotgunEventDaemon.id
 logMode: 1
 
 # The path where to put log files
-logPath: /var/log/shotgunEventDaemon
+logPath: /usr/local/shotgun/logs/shotgunEventDaemon
 
 # The name of the daemon log file. The setup is for 10 log files that rotate
 # every night at midnight
@@ -34,7 +34,7 @@ logFile: shotgunEventDaemon
 # - 30 - Warnings
 # - 40 - Error
 # - 50 - Critical
-logging: 20
+logging: 10
 
 # Enable Timing logging
 # Timing logging is a separate log file that will log timing information regarding
@@ -48,11 +48,11 @@ timing_log: off
 # If the connection to shotgun fails, number of seconds to wait until we retry.
 # This allows for occasional network hiccups, server restarts, application maintenance,
 # etc.
-conn_retry_sleep = 60
+conn_retry_sleep = 120
 
 # Number of times to retry connection before logging an error level message (which
 # sends an email in the default configuration)
-max_conn_retries = 5
+max_conn_retries = 10
 
 # Number of seconds to wait before requesting new events after each batch of events
 # is done processing
@@ -94,7 +94,7 @@ use_session_uuid: True
 
 # A comma delimited list of paths where the framework should look for plugins to
 # load.
-paths: /usr/local/shotgun/plugins
+paths: /usr/local/shotgun/events-sample/plugins
 
 
 [emails]
@@ -127,4 +127,4 @@ to:
 subject:
 
 [sentry]
-sentry_dsn:
+sentry_dsn: https://b2c77e36a6794ca08dd31681c645c876@sentry.io/1412782
