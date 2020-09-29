@@ -62,22 +62,13 @@ from shotgun_api3.lib.sgtimezone import SgTimezone
 
 SG_TIMEZONE = SgTimezone()
 CURRENT_PYTHON_VERSION = StrictVersion(sys.version.split()[0])
-PYTHON_25 = StrictVersion("2.5")
 PYTHON_26 = StrictVersion("2.6")
 PYTHON_27 = StrictVersion("2.7")
 
-if CURRENT_PYTHON_VERSION > PYTHON_25:
-    EMAIL_FORMAT_STRING = """Time: %(asctime)s
+EMAIL_FORMAT_STRING = """Time: %(asctime)s
 Logger: %(name)s
 Path: %(pathname)s
 Function: %(funcName)s
-Line: %(lineno)d
-
-%(message)s"""
-else:
-    EMAIL_FORMAT_STRING = """Time: %(asctime)s
-Logger: %(name)s
-Path: %(pathname)s
 Line: %(lineno)d
 
 %(message)s"""
@@ -1199,17 +1190,8 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
     def __init__(
         self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None
     ):
-        args = [smtpServer, fromAddr, toAddrs, emailSubject]
+        args = [smtpServer, fromAddr, toAddrs, emailSubject, credentials]
         if credentials:
-            # Python 2.6 implemented the credentials argument
-            if CURRENT_PYTHON_VERSION >= PYTHON_26:
-                args.append(credentials)
-            else:
-                if isinstance(credentials, tuple):
-                    self.username, self.password = credentials
-                else:
-                    self.username = None
-
             # Python 2.7 implemented the secure argument
             if CURRENT_PYTHON_VERSION >= PYTHON_27:
                 args.append(secure)
@@ -1230,18 +1212,11 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
 
         Format the record and send it to the specified addressees.
         """
-        # If the socket timeout isn't None, in Python 2.4 the socket read
-        # following enabling starttls() will hang. The default timeout will
-        # be reset to 60 later in 2 locations because Python 2.4 doesn't support
-        # except and finally in the same try block.
-        if CURRENT_PYTHON_VERSION >= PYTHON_25:
-            socket.setdefaulttimeout(None)
 
         # Mostly copied from Python 2.7 implementation.
-        # Using email.Utils instead of email.utils for 2.4 compat.
         try:
             import smtplib
-            from email.Utils import formatdate
+            from email.utils import formatdate
 
             port = self.mailport
             if not port:
@@ -1265,12 +1240,9 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
             smtp.sendmail(self.fromaddr, self.toaddrs, msg)
             smtp.close()
         except (KeyboardInterrupt, SystemExit):
-            socket.setdefaulttimeout(60)
             raise
         except:
             self.handleError(record)
-
-        socket.setdefaulttimeout(60)
 
 
 class EventDaemonError(Exception):
@@ -1365,6 +1337,10 @@ class LinuxDaemon(daemonizer.Daemon):
 def main():
     """
     """
+    if CURRENT_PYTHON_VERSION <= PYTHON_26:
+        print("Python 2.5 and older is not supported anymore. Please use Python 2.6 or newer.")
+        return 3
+
     action = None
     if len(sys.argv) > 1:
         action = sys.argv[1]
