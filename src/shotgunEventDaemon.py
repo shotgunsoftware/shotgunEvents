@@ -1338,7 +1338,9 @@ def main():
     """
     """
     if CURRENT_PYTHON_VERSION <= PYTHON_26:
-        print("Python 2.5 and older is not supported anymore. Please use Python 2.6 or newer.")
+        print(
+            "Python 2.5 and older is not supported anymore. Please use Python 2.6 or newer."
+        )
         return 3
 
     action = None
