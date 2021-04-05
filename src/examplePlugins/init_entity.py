@@ -72,7 +72,7 @@ def is_valid(sg, logger, args):
         entity_schema = sg.schema_field_read(args["entity_type"])
     except Exception as e:
         logger.warning(
-            'Can\'t read Shotgun schema for "entity_type" args\'s value ("%s"): %s'
+            'Can\'t read SG schema for "entity_type" args\'s value ("%s"): %s'
             % (args["entity_type"], e)
         )
         return
@@ -155,7 +155,7 @@ def is_valid(sg, logger, args):
                 # make sure the initial value provided will work for this field
                 if field_value_type not in valid_value_types:
                     logger.warning(
-                        'Initial value for Shotgun field "%s" is type "%s" but should be of type(s) "%s," please fix.'
+                        'Initial value for SG field "%s" is type "%s" but should be of type(s) "%s," please fix.'
                         % (field_name, field_value_type, valid_value_types,)
                     )
                     return
@@ -169,7 +169,7 @@ def is_valid(sg, logger, args):
                     )
                     if valid_values and field_value not in valid_values:
                         logger.warning(
-                            'Initial value for Shotgun field "%s" is "%s" but must be one of the following: "%s".'
+                            'Initial value for SG field "%s" is "%s" but must be one of the following: "%s".'
                             % (field_name, str(field_value), ", ".join(valid_values),)
                         )
                         return

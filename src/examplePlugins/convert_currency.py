@@ -84,7 +84,7 @@ def is_valid(sg, logger, args):
         entity_schema = sg.schema_field_read(args["entity_type"])
     except Exception as e:
         raise ValueError(
-            'Can\'t read Shotgun schema for "entity_type" setting\'s value ("%s"): %s'
+            'Can\'t read SG schema for "entity_type" setting\'s value ("%s"): %s'
             % (args["entity_type"], e)
         )
 
@@ -118,7 +118,7 @@ def is_valid(sg, logger, args):
         # Make sure the field is the correct Shotgun type.
         if sg_type not in type_target["sg_type"]:
             raise ValueError(
-                '"%s" setting refers to a Shotgun field that is type "%s" but should be of type(s) %s, please fix.'
+                '"%s" setting refers to a SG field that is type "%s" but should be of type(s) %s, please fix.'
                 % (name, sg_type, type_target["sg_type"])
             )
 

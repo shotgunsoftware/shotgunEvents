@@ -357,7 +357,7 @@ class Engine(object):
         socket.setdefaulttimeout(60)
 
         # Notify which version of shotgun api we are using
-        self.log.info("Using Shotgun Python API version %s" % sg.__version__)
+        self.log.info("Using SG Python API version %s" % sg.__version__)
 
         try:
             for collection in self._pluginCollections:
@@ -475,9 +475,7 @@ class Engine(object):
                 conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
             else:
                 lastEventId = result["id"]
-                self.log.info(
-                    "Last event id (%d) from the Shotgun database.", lastEventId
-                )
+                self.log.info("Last event id (%d) from the SG database.", lastEventId)
 
         return lastEventId
 
@@ -619,7 +617,7 @@ class Engine(object):
         conn_attempts += 1
         if conn_attempts == self._max_conn_retries:
             self.log.error(
-                "Unable to connect to Shotgun (attempt %s of %s): %s",
+                "Unable to connect to SG (attempt %s of %s): %s",
                 conn_attempts,
                 self._max_conn_retries,
                 msg,
@@ -628,7 +626,7 @@ class Engine(object):
             time.sleep(self._conn_retry_sleep)
         else:
             self.log.warning(
-                "Unable to connect to Shotgun (attempt %s of %s): %s",
+                "Unable to connect to SG (attempt %s of %s): %s",
                 conn_attempts,
                 self._max_conn_retries,
                 msg,
@@ -1183,8 +1181,8 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
     """
 
     LEVEL_SUBJECTS = {
-        logging.ERROR: "ERROR - Shotgun event daemon.",
-        logging.CRITICAL: "CRITICAL - Shotgun event daemon.",
+        logging.ERROR: "ERROR - SG event daemon.",
+        logging.CRITICAL: "CRITICAL - SG event daemon.",
     }
 
     def __init__(

@@ -83,9 +83,7 @@ def check_entity_schema(sg, logger, entity_type, field_name, field_type, values=
     try:
         entity_schema = sg.schema_field_read(entity_type)
     except Exception as e:
-        logger.warning(
-            'Can\'t read Shotgun schema for entity "%s": %s' % (entity_type, e)
-        )
+        logger.warning('Can\'t read SG schema for entity "%s": %s' % (entity_type, e))
         return
 
     # Grab the Shotgun field data type, if the field exists.
@@ -103,7 +101,7 @@ def check_entity_schema(sg, logger, entity_type, field_name, field_type, values=
     # Make sure the field is the correct Shotgun type.
     if sg_type not in field_type:
         logger.warning(
-            'Shotgun field "%s" is type "%s" but should be of type(s) "%s," please fix.'
+            'SG field "%s" is type "%s" but should be of type(s) "%s," please fix.'
             % (field_name, sg_type, field_type)
         )
         return

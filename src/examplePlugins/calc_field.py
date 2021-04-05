@@ -81,9 +81,7 @@ def check_entity_schema(sg, logger, entity_type, field_name, field_type):
     try:
         entity_schema = sg.schema_field_read(entity_type)
     except Exception as e:
-        logger.warning(
-            'Can\'t read Shotgun schema for entity "%s": %s' % (entity_type, e)
-        )
+        logger.warning('Can\'t read SG schema for entity "%s": %s' % (entity_type, e))
         return
 
     # Grab the Shotgun field data type, if the field exists.
@@ -101,7 +99,7 @@ def check_entity_schema(sg, logger, entity_type, field_name, field_type):
     # Make sure the field is the correct Shotgun type.
     if sg_type not in field_type:
         logger.warning(
-            'Shotgun field "%s" is type "%s" but should be of type(s) "%s," please fix.'
+            'SG field "%s" is type "%s" but should be of type(s) "%s," please fix.'
             % (field_name, sg_type, field_type)
         )
         return
@@ -158,7 +156,7 @@ def is_valid(sg, logger, args):
         sg.schema_field_read(args["entity_type"])
     except Exception as e:
         logger.warning(
-            'Can\'t read Shotgun schema for "entity_type" setting\'s value ("%s"): %s'
+            'Can\'t read SG schema for "entity_type" setting\'s value ("%s"): %s'
             % (args["entity_type"], e)
         )
         return
@@ -303,8 +301,7 @@ def update_field_value(sg, logger, event, args):
     # Bail if no type comes back.
     if not field_type:
         logger.debug(
-            "Could not get type for Shotgun field %s, skipping."
-            % args["field_to_update"]
+            "Could not get type for SG field %s, skipping." % args["field_to_update"]
         )
         return
 

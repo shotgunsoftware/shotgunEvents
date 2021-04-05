@@ -101,7 +101,7 @@ def is_valid(sg, logger, args):
         entity_schema = sg.schema_field_read(args["entity_type"])
     except Exception as e:
         logger.warning(
-            'Can\'t read Shotgun schema for "entity_type" args\'s value ("%s"): %s'
+            'Can\'t read SG schema for "entity_type" args\'s value ("%s"): %s'
             % (args["entity_type"], e)
         )
         return
