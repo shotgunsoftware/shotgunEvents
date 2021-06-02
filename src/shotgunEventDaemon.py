@@ -23,30 +23,34 @@ folder or an html compiled version at:
 http://shotgunsoftware.github.com/shotgunEvents
 """
 
-__version__ = '0.9'
-__version_info__ = (0, 9)
+from __future__ import print_function
 
-import ConfigParser
+__version__ = "1.0"
+__version_info__ = (1, 0)
+
+# Suppress the deprecation warning about imp until we get around to replacing it
+import warnings
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import imp
+
 import datetime
-import imp
 import logging
 import logging.handlers
 import os
 import pprint
+import re
 import socket
 import sys
 import time
 import traceback
-import re
+from six.moves import configparser
+import six.moves.cPickle as pickle
 
 from distutils.version import StrictVersion
 
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
-
-if sys.platform == 'win32':
+if sys.platform == "win32":
     import win32serviceutil
     import win32service
     import win32event
@@ -61,29 +65,16 @@ try:
 except ImportError:
     sentry_sdk = None
 
-SG_TIMEZONE = SgTimezone()
-# dealing with python version 2.7.15+, maybe some other solution out there but updated it without much research
-if sys.version.split()[0] == '2.7.15+':
-    _p_version = '2.7.15'
-else:
-    _p_version = sys.version.split()[0]
-CURRENT_PYTHON_VERSION = StrictVersion(_p_version)
-PYTHON_25 = StrictVersion('2.5')
-PYTHON_26 = StrictVersion('2.6')
-PYTHON_27 = StrictVersion('2.7')
 
-if CURRENT_PYTHON_VERSION > PYTHON_25:
-    EMAIL_FORMAT_STRING = """Time: %(asctime)s
+SG_TIMEZONE = SgTimezone()
+CURRENT_PYTHON_VERSION = StrictVersion(sys.version.split()[0])
+PYTHON_26 = StrictVersion("2.6")
+PYTHON_27 = StrictVersion("2.7")
+
+EMAIL_FORMAT_STRING = """Time: %(asctime)s
 Logger: %(name)s
 Path: %(pathname)s
 Function: %(funcName)s
-Line: %(lineno)d
-
-%(message)s"""
-else:
-    EMAIL_FORMAT_STRING = """Time: %(asctime)s
-Logger: %(name)s
-Path: %(pathname)s
 Line: %(lineno)d
 
 %(message)s"""
@@ -94,8 +85,12 @@ def _setFilePathOnLogger(logger, path):
     _removeHandlersFromLogger(logger, logging.handlers.TimedRotatingFileHandler)
 
     # Add the file handler
-    handler = logging.handlers.TimedRotatingFileHandler(path, 'midnight', backupCount=10)
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    handler = logging.handlers.TimedRotatingFileHandler(
+        path, "midnight", backupCount=10
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
     logger.addHandler(handler)
 
 
@@ -116,7 +111,16 @@ def _removeHandlersFromLogger(logger, handlerTypes=None):
             logger.removeHandler(handler)
 
 
-def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject, username=None, password=None, secure=None):
+def _addMailHandlerToLogger(
+    logger,
+    smtpServer,
+    fromAddr,
+    toAddrs,
+    emailSubject,
+    username=None,
+    password=None,
+    secure=None,
+):
     """
     Configure a logger with a handler that sends emails to specified
     addresses.
@@ -132,13 +136,14 @@ def _addMailHandlerToLogger(logger, smtpServer, fromAddr, toAddrs, emailSubject,
         SMTPHandler.
     """
     if smtpServer and fromAddr and toAddrs and emailSubject:
-        mailHandler = CustomSMTPHandler(smtpServer, fromAddr, toAddrs, emailSubject, (username, password), secure)
+        mailHandler = CustomSMTPHandler(
+            smtpServer, fromAddr, toAddrs, emailSubject, (username, password), secure
+        )
         mailHandler.setLevel(logging.ERROR)
         mailFormatter = logging.Formatter(EMAIL_FORMAT_STRING)
         mailHandler.setFormatter(mailFormatter)
 
         logger.addHandler(mailHandler)
-
 
 def _sentry_pre_send(event, hint):
     if 'level' in event['extra']:
@@ -156,95 +161,97 @@ def _sentry_pre_send(event, hint):
     return event
 
 
-class Config(ConfigParser.ConfigParser):
+class Config(configparser.SafeConfigParser):
     def __init__(self, path):
-        ConfigParser.ConfigParser.__init__(self)
+        configparser.SafeConfigParser.__init__(self, os.environ)
         self.read(path)
 
     def getShotgunURL(self):
-        return self.get('shotgun', 'server')
+        return self.get("shotgun", "server")
 
     def getEngineScriptName(self):
-        return self.get('shotgun', 'name')
+        return self.get("shotgun", "name")
 
     def getEngineScriptKey(self):
-        return self.get('shotgun', 'key')
+        return self.get("shotgun", "key")
 
     def getEngineProxyServer(self):
         try:
-            proxy_server = self.get('shotgun', 'proxy_server').strip()
+            proxy_server = self.get("shotgun", "proxy_server").strip()
             if not proxy_server:
                 return None
             return proxy_server
-        except ConfigParser.NoOptionError:
+        except configparser.NoOptionError:
             return None
 
     def getEventIdFile(self):
-        return self.get('daemon', 'eventIdFile')
+        return self.get("daemon", "eventIdFile")
 
     def getEnginePIDFile(self):
-        return self.get('daemon', 'pidFile')
+        return self.get("daemon", "pidFile")
 
     def getPluginPaths(self):
-        return [s.strip() for s in self.get('plugins', 'paths').split(',')]
+        return [s.strip() for s in self.get("plugins", "paths").split(",")]
 
     def getSMTPServer(self):
-        return self.get('emails', 'server')
+        return self.get("emails", "server")
 
     def getSMTPPort(self):
-        if self.has_option('emails', 'port'):
-            return self.getint('emails', 'port')
+        if self.has_option("emails", "port"):
+            return self.getint("emails", "port")
         return 25
 
     def getFromAddr(self):
-        return self.get('emails', 'from')
+        return self.get("emails", "from")
 
     def getToAddrs(self):
-        return [s.strip() for s in self.get('emails', 'to').split(',')]
+        return [s.strip() for s in self.get("emails", "to").split(",")]
 
     def getEmailSubject(self):
-        return self.get('emails', 'subject')
+        return self.get("emails", "subject")
 
     def getEmailUsername(self):
-        if self.has_option('emails', 'username'):
-            return self.get('emails', 'username')
+        if self.has_option("emails", "username"):
+            return self.get("emails", "username")
         return None
 
     def getEmailPassword(self):
-        if self.has_option('emails', 'password'):
-            return self.get('emails', 'password')
+        if self.has_option("emails", "password"):
+            return self.get("emails", "password")
         return None
 
     def getSecureSMTP(self):
-        if self.has_option('emails', 'useTLS'):
-            return self.getboolean('emails', 'useTLS') or False
+        if self.has_option("emails", "useTLS"):
+            return self.getboolean("emails", "useTLS") or False
         return False
 
     def getLogMode(self):
-        return self.getint('daemon', 'logMode')
+        return self.getint("daemon", "logMode")
 
     def getLogLevel(self):
-        return self.getint('daemon', 'logging')
+        return self.getint("daemon", "logging")
 
     def getMaxEventBatchSize(self):
-        if self.has_option('daemon', 'max_event_batch_size'):
-            return self.getint('daemon', 'max_event_batch_size')
+        if self.has_option("daemon", "max_event_batch_size"):
+            return self.getint("daemon", "max_event_batch_size")
         return 500
 
     def getLogFile(self, filename=None):
         if filename is None:
-            if self.has_option('daemon', 'logFile'):
-                filename = self.get('daemon', 'logFile')
+            if self.has_option("daemon", "logFile"):
+                filename = self.get("daemon", "logFile")
             else:
-                raise ConfigError('The config file has no logFile option.')
+                raise ConfigError("The config file has no logFile option.")
 
-        if self.has_option('daemon', 'logPath'):
-            path = self.get('daemon', 'logPath')
+        if self.has_option("daemon", "logPath"):
+            path = self.get("daemon", "logPath")
 
             if not os.path.exists(path):
                 os.makedirs(path)
             elif not os.path.isdir(path):
-                raise ConfigError('The logPath value in the config should point to a directory.')
+                raise ConfigError(
+                    "The logPath value in the config should point to a directory."
+                )
 
             path = os.path.join(path, filename)
 
@@ -254,10 +261,13 @@ class Config(ConfigParser.ConfigParser):
         return path
 
     def getTimingLogFile(self):
-        if not self.has_option('daemon', 'timing_log') or self.get('daemon', 'timing_log') != 'on':
+        if (
+            not self.has_option("daemon", "timing_log")
+            or self.get("daemon", "timing_log") != "on"
+        ):
             return None
 
-        return self.getLogFile() + '.timing'
+        return self.getLogFile() + ".timing"
 
     def getSentryDsn(self):
         if self.has_option('sentry', 'sentry_dsn') and self.get('sentry', 'sentry_dsn'):
@@ -282,17 +292,19 @@ class Engine(object):
         self.set_sentry_notification()
 
         # Get config values
-        self._pluginCollections = [PluginCollection(self, s) for s in self.config.getPluginPaths()]
+        self._pluginCollections = [
+            PluginCollection(self, s) for s in self.config.getPluginPaths()
+        ]
         self._sg = sg.Shotgun(
             self.config.getShotgunURL(),
             self.config.getEngineScriptName(),
             self.config.getEngineScriptKey(),
-            http_proxy=self.config.getEngineProxyServer()
+            http_proxy=self.config.getEngineProxyServer(),
         )
-        self._max_conn_retries = self.config.getint('daemon', 'max_conn_retries')
-        self._conn_retry_sleep = self.config.getint('daemon', 'conn_retry_sleep')
-        self._fetch_interval = self.config.getint('daemon', 'fetch_interval')
-        self._use_session_uuid = self.config.getboolean('shotgun', 'use_session_uuid')
+        self._max_conn_retries = self.config.getint("daemon", "max_conn_retries")
+        self._conn_retry_sleep = self.config.getint("daemon", "conn_retry_sleep")
+        self._fetch_interval = self.config.getint("daemon", "fetch_interval")
+        self._use_session_uuid = self.config.getboolean("shotgun", "use_session_uuid")
 
         # Setup the loggers for the main engine
         if self.config.getLogMode() == 0:
@@ -300,14 +312,14 @@ class Engine(object):
             rootLogger = logging.getLogger()
             rootLogger.config = self.config
             _setFilePathOnLogger(rootLogger, self.config.getLogFile())
-            print self.config.getLogFile()
+            print(self.config.getLogFile())
 
             # Set the engine logger for email output.
-            self.log = logging.getLogger('engine')
+            self.log = logging.getLogger("engine")
             self.setEmailsOnLogger(self.log, True)
         else:
             # Set the engine logger for file and email output.
-            self.log = logging.getLogger('engine')
+            self.log = logging.getLogger("engine")
             self.log.config = self.config
             _setFilePathOnLogger(self.log, self.config.getLogFile())
             self.setEmailsOnLogger(self.log, True)
@@ -317,7 +329,7 @@ class Engine(object):
         # Setup the timing log file
         timing_log_filename = self.config.getTimingLogFile()
         if timing_log_filename:
-            self.timing_logger = logging.getLogger('timing')
+            self.timing_logger = logging.getLogger("timing")
             self.timing_logger.setLevel(self.config.getLogLevel())
             _setFilePathOnLogger(self.timing_logger, timing_log_filename)
         else:
@@ -348,11 +360,18 @@ class Engine(object):
         elif isinstance(emails, (list, tuple)):
             toAddrs = emails
         else:
-            msg = 'Argument emails should be True to use the default addresses, False to not send any emails or a list of recipient addresses. Got %s.'
+            msg = "Argument emails should be True to use the default addresses, False to not send any emails or a list of recipient addresses. Got %s."
             raise ValueError(msg % type(emails))
 
         _addMailHandlerToLogger(
-            logger, (smtpServer, smtpPort), fromAddr, toAddrs, emailSubject, username, password, secure
+            logger,
+            (smtpServer, smtpPort),
+            fromAddr,
+            toAddrs,
+            emailSubject,
+            username,
+            password,
+            secure,
         )
 
     def set_sentry_notification(self):
@@ -375,7 +394,7 @@ class Engine(object):
         socket.setdefaulttimeout(60)
 
         # Notify which version of shotgun api we are using
-        self.log.info('Using Shotgun version %s' % sg.__version__)
+        self.log.info("Using SG Python API version %s" % sg.__version__)
 
         try:
             for collection in self._pluginCollections:
@@ -385,9 +404,9 @@ class Engine(object):
 
             self._mainLoop()
         except KeyboardInterrupt:
-            self.log.warning('Keyboard interrupt. Cleaning up...')
-        except Exception, err:
-            msg = 'Crash!!!!! Unexpected error (%s) in main loop.\n\n%s'
+            self.log.warning("Keyboard interrupt. Cleaning up...")
+        except Exception as err:
+            msg = "Crash!!!!! Unexpected error (%s) in main loop.\n\n%s"
             self.log.critical(msg, type(err), traceback.format_exc(err))
 
     def _loadEventIdData(self):
@@ -403,7 +422,7 @@ class Engine(object):
 
         if eventIdFile and os.path.exists(eventIdFile):
             try:
-                fh = open(eventIdFile)
+                fh = open(eventIdFile, "rb")
                 try:
                     self._eventIdData = pickle.load(fh)
 
@@ -422,7 +441,7 @@ class Engine(object):
                     # in the id file. First we'll search to see the latest id a
                     # matching plugin name has elsewhere in the id file. We do
                     # this as a fallback in case the plugins directory has been
-                    # moved. If there's no match, use the latest event id 
+                    # moved. If there's no match, use the latest event id
                     # in Shotgun.
                     if noStateCollections:
                         maxPluginStates = {}
@@ -449,18 +468,23 @@ class Engine(object):
 
                     # Backwards compatibility:
                     # Reopen the file to try to read an old-style int
-                    fh = open(eventIdFile)
+                    fh = open(eventIdFile, "rb")
                     line = fh.readline().strip()
                     if line.isdigit():
                         # The _loadEventIdData got an old-style id file containing a single
                         # int which is the last id properly processed.
                         lastEventId = int(line)
-                        self.log.debug('Read last event id (%d) from file.', lastEventId)
+                        self.log.debug(
+                            "Read last event id (%d) from file.", lastEventId
+                        )
                         for collection in self._pluginCollections:
                             collection.setState(lastEventId)
                 fh.close()
-            except OSError, err:
-                raise EventDaemonError('Could not load event id from file.\n\n%s' % traceback.format_exc(err))
+            except OSError as err:
+                raise EventDaemonError(
+                    "Could not load event id from file.\n\n%s"
+                    % traceback.format_exc(err)
+                )
         else:
             # No id file?
             # Get the event data from the database.
@@ -476,17 +500,19 @@ class Engine(object):
         conn_attempts = 0
         lastEventId = None
         while lastEventId is None:
-            order = [{'column':'id', 'direction':'desc'}]
+            order = [{"column": "id", "direction": "desc"}]
             try:
-                result = self._sg.find_one("EventLogEntry", filters=[], fields=['id'], order=order)
-            except (sg.ProtocolError, sg.ResponseError, socket.error), err:
+                result = self._sg.find_one(
+                    "EventLogEntry", filters=[], fields=["id"], order=order
+                )
+            except (sg.ProtocolError, sg.ResponseError, socket.error) as err:
                 conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
-            except Exception, err:
+            except Exception as err:
                 msg = "Unknown error: %s" % str(err)
                 conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
             else:
-                lastEventId = result['id']
-                self.log.info('Last event id (%d) from the Shotgun database.', lastEventId)
+                lastEventId = result["id"]
+                self.log.info("Last event id (%d) from the SG database.", lastEventId)
 
         return lastEventId
 
@@ -512,7 +538,7 @@ class Engine(object):
           execution), skip it.
         - Each time through the loop, if the pidFile is gone, stop.
         """
-        self.log.debug('Starting the event processing loop.')
+        self.log.debug("Starting the event processing loop.")
         while self._continue:
             # Process events
             events = self._getNewEvents()
@@ -529,11 +555,11 @@ class Engine(object):
             # Reload plugins
             for collection in self._pluginCollections:
                 collection.load()
-                
+
             # Make sure that newly loaded events have proper state.
             self._loadEventIdData()
 
-        self.log.debug('Shuting down event processing loop.')
+        self.log.debug("Shuting down event processing loop.")
 
     def stop(self):
         self._continue = False
@@ -546,25 +572,50 @@ class Engine(object):
         @rtype: I{list} of Shotgun event dictionaries.
         """
         nextEventId = None
-        for newId in [coll.getNextUnprocessedEventId() for coll in self._pluginCollections]:
+        for newId in [
+            coll.getNextUnprocessedEventId() for coll in self._pluginCollections
+        ]:
             if newId is not None and (nextEventId is None or newId < nextEventId):
                 nextEventId = newId
 
         if nextEventId is not None:
-            filters = [['id', 'greater_than', nextEventId - 1]]
-            fields = ['id', 'event_type', 'attribute_name', 'meta', 'entity', 'user', 'project', 'session_uuid', 'created_at']
-            order = [{'column':'id', 'direction':'asc'}]
-    
+            filters = [["id", "greater_than", nextEventId - 1]]
+            fields = [
+                "id",
+                "event_type",
+                "attribute_name",
+                "meta",
+                "entity",
+                "user",
+                "project",
+                "session_uuid",
+                "created_at",
+            ]
+            order = [{"column": "id", "direction": "asc"}]
+
             conn_attempts = 0
             while True:
                 try:
-                    events = self._sg.find("EventLogEntry", filters, fields, order, limit=self.config.getMaxEventBatchSize())
+                    events = self._sg.find(
+                        "EventLogEntry",
+                        filters,
+                        fields,
+                        order,
+                        limit=self.config.getMaxEventBatchSize(),
+                    )
                     if events:
-                        self.log.debug('Got %d events: %d to %d.', len(events), events[0]['id'], events[-1]['id'])
+                        self.log.debug(
+                            "Got %d events: %d to %d.",
+                            len(events),
+                            events[0]["id"],
+                            events[-1]["id"],
+                        )
                     return events
-                except (sg.ProtocolError, sg.ResponseError, socket.error), err:
-                    conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
-                except Exception, err:
+                except (sg.ProtocolError, sg.ResponseError, socket.error) as err:
+                    conn_attempts = self._checkConnectionAttempts(
+                        conn_attempts, str(err)
+                    )
+                except Exception as err:
                     msg = "Unknown error: %s" % str(err)
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
 
@@ -586,23 +637,37 @@ class Engine(object):
             for colPath, state in self._eventIdData.items():
                 if state:
                     try:
-                        fh = open(eventIdFile, 'w')
-                        pickle.dump(self._eventIdData, fh)
-                        fh.close()
-                    except OSError, err:
-                        self.log.error('Can not write event id data to %s.\n\n%s', eventIdFile, traceback.format_exc(err))
+                        with open(eventIdFile, "wb") as fh:
+                            # Use protocol 2 so it can also be loaded in Python 2
+                            pickle.dump(self._eventIdData, fh, protocol=2)
+                    except OSError as err:
+                        self.log.error(
+                            "Can not write event id data to %s.\n\n%s",
+                            eventIdFile,
+                            traceback.format_exc(err),
+                        )
                     break
             else:
-                self.log.warning('No state was found. Not saving to disk.')
+                self.log.warning("No state was found. Not saving to disk.")
 
     def _checkConnectionAttempts(self, conn_attempts, msg):
         conn_attempts += 1
         if conn_attempts == self._max_conn_retries:
-            self.log.error('Unable to connect to Shotgun (attempt %s of %s): %s', conn_attempts, self._max_conn_retries, msg)
+            self.log.error(
+                "Unable to connect to SG (attempt %s of %s): %s",
+                conn_attempts,
+                self._max_conn_retries,
+                msg,
+            )
             conn_attempts = 0
             time.sleep(self._conn_retry_sleep)
         else:
-            self.log.warning('Unable to connect to Shotgun (attempt %s of %s): %s', conn_attempts, self._max_conn_retries, msg)
+            self.log.warning(
+                "Unable to connect to SG (attempt %s of %s): %s",
+                conn_attempts,
+                self._max_conn_retries,
+                msg,
+            )
         return conn_attempts
 
 
@@ -610,9 +675,10 @@ class PluginCollection(object):
     """
     A group of plugin files in a location on the disk.
     """
+
     def __init__(self, engine, path):
         if not os.path.isdir(path):
-            raise ValueError('Invalid path: %s' % path)
+            raise ValueError("Invalid path: %s" % path)
 
         self._engine = engine
         self.path = path
@@ -652,7 +718,7 @@ class PluginCollection(object):
             if plugin.isActive():
                 plugin.process(event)
             else:
-                plugin.logger.debug('Skipping: inactive.')
+                plugin.logger.debug("Skipping: inactive.")
 
     def load(self):
         """
@@ -667,13 +733,15 @@ class PluginCollection(object):
         newPlugins = {}
 
         for basename in os.listdir(self.path):
-            if not basename.endswith('.py') or basename.startswith('.'):
+            if not basename.endswith(".py") or basename.startswith("."):
                 continue
 
             if basename in self._plugins:
                 newPlugins[basename] = self._plugins[basename]
             else:
-                newPlugins[basename] = Plugin(self._engine, os.path.join(self.path, basename))
+                newPlugins[basename] = Plugin(
+                    self._engine, os.path.join(self.path, basename)
+                )
 
             newPlugins[basename].load()
 
@@ -689,6 +757,7 @@ class Plugin(object):
     The plugin class represents a file on disk which contains one or more
     callbacks.
     """
+
     def __init__(self, engine, path):
         """
         @param engine: The engine that instanciated this plugin.
@@ -702,7 +771,7 @@ class Plugin(object):
         self._path = path
 
         if not os.path.isfile(path):
-            raise ValueError('The path to the plugin is not a valid file - %s.' % path)
+            raise ValueError("The path to the plugin is not a valid file - %s." % path)
 
         self._pluginName = os.path.splitext(os.path.split(self._path)[1])[0]
         self._active = True
@@ -712,12 +781,14 @@ class Plugin(object):
         self._backlog = {}
 
         # Setup the plugin's logger
-        self.logger = logging.getLogger('plugin.' + self.getName())
+        self.logger = logging.getLogger("plugin." + self.getName())
         self.logger.config = self._engine.config
         self._engine.setEmailsOnLogger(self.logger, True)
         self.logger.setLevel(self._engine.config.getLogLevel())
         if self._engine.config.getLogMode() == 1:
-            _setFilePathOnLogger(self.logger, self._engine.config.getLogFile('plugin.' + self.getName()))
+            _setFilePathOnLogger(
+                self.logger, self._engine.config.getLogFile("plugin." + self.getName())
+            )
 
     def getName(self):
         return self._pluginName
@@ -728,7 +799,7 @@ class Plugin(object):
         elif isinstance(state, tuple):
             self._lastEventId, self._backlog = state
         else:
-            raise ValueError('Unknown state type: %s.' % type(state))
+            raise ValueError("Unknown state type: %s." % type(state))
 
     def getState(self):
         return (self._lastEventId, self._backlog)
@@ -740,11 +811,11 @@ class Plugin(object):
             nextId = None
 
         now = datetime.datetime.now()
-        for k in self._backlog.keys():
+        for k in list(self._backlog):
             v = self._backlog[k]
             if v < now:
-                self.logger.warning('Timeout elapsed on backlog event id %d.', k)
-                del(self._backlog[k])
+                self.logger.warning("Timeout elapsed on backlog event id %d.", k)
+                del self._backlog[k]
             elif nextId is None or k < nextId:
                 nextId = k
 
@@ -788,9 +859,9 @@ class Plugin(object):
         # Check file mtime
         mtime = os.path.getmtime(self._path)
         if self._mtime is None:
-            self._engine.log.info('Loading plugin at %s' % self._path)
+            self._engine.log.info("Loading plugin at %s" % self._path)
         elif self._mtime < mtime:
-            self._engine.log.info('Reloading plugin at %s' % self._path)
+            self._engine.log.info("Reloading plugin at %s" % self._path)
         else:
             # The mtime of file is equal or older. We don't need to do anything.
             return
@@ -804,38 +875,70 @@ class Plugin(object):
             plugin = imp.load_source(self._pluginName, self._path)
         except:
             self._active = False
-            self.logger.error('Could not load the plugin at %s.\n\n%s', self._path, traceback.format_exc())
+            self.logger.error(
+                "Could not load the plugin at %s.\n\n%s",
+                self._path,
+                traceback.format_exc(),
+            )
             return
 
-        regFunc = getattr(plugin, 'registerCallbacks', None)
+        regFunc = getattr(plugin, "registerCallbacks", None)
         if callable(regFunc):
             try:
                 regFunc(Registrar(self))
             except:
-                self._engine.log.critical('Error running register callback function from plugin at %s.\n\n%s', self._path, traceback.format_exc())
+                self._engine.log.critical(
+                    "Error running register callback function from plugin at %s.\n\n%s",
+                    self._path,
+                    traceback.format_exc(),
+                )
                 self._active = False
         else:
-            self._engine.log.critical('Did not find a registerCallbacks function in plugin at %s.', self._path)
+            self._engine.log.critical(
+                "Did not find a registerCallbacks function in plugin at %s.", self._path
+            )
             self._active = False
 
-    def registerCallback(self, sgScriptName, sgScriptKey, callback, matchEvents=None, args=None, stopOnError=True):
+    def registerCallback(
+        self,
+        sgScriptName,
+        sgScriptKey,
+        callback,
+        matchEvents=None,
+        args=None,
+        stopOnError=True,
+    ):
         """
         Register a callback in the plugin.
         """
         global sg
-        sgConnection = sg.Shotgun(self._engine.config.getShotgunURL(), sgScriptName, sgScriptKey, 
-                                  http_proxy=self._engine.config.getEngineProxyServer())
-        self._callbacks.append(Callback(callback, self, self._engine, sgConnection, matchEvents, args, stopOnError))
+        sgConnection = sg.Shotgun(
+            self._engine.config.getShotgunURL(),
+            sgScriptName,
+            sgScriptKey,
+            http_proxy=self._engine.config.getEngineProxyServer(),
+        )
+        self._callbacks.append(
+            Callback(
+                callback,
+                self,
+                self._engine,
+                sgConnection,
+                matchEvents,
+                args,
+                stopOnError,
+            )
+        )
 
     def process(self, event):
-        if event['id'] in self._backlog:
+        if event["id"] in self._backlog:
             if self._process(event):
-                self.logger.info('Processed id %d from backlog.' % event['id'])
-                del(self._backlog[event['id']])
+                self.logger.info("Processed id %d from backlog." % event["id"])
+                del self._backlog[event["id"]]
                 self._updateLastEventId(event)
-        elif self._lastEventId is not None and event['id'] <= self._lastEventId:
-            msg = 'Event %d is too old. Last event processed was (%d).'
-            self.logger.debug(msg, event['id'], self._lastEventId)
+        elif self._lastEventId is not None and event["id"] <= self._lastEventId:
+            msg = "Event %d is too old. Last event processed was (%d)."
+            self.logger.debug(msg, event["id"], self._lastEventId)
         else:
             if self._process(event):
                 self._updateLastEventId(event)
@@ -846,37 +949,49 @@ class Plugin(object):
         for callback in self:
             if callback.isActive():
                 if callback.canProcess(event):
-                    msg = 'Dispatching event %d to callback %s.'
-                    self.logger.debug(msg, event['id'], str(callback))
+                    msg = "Dispatching event %d to callback %s."
+                    self.logger.debug(msg, event["id"], str(callback))
                     if not callback.process(event):
                         # A callback in the plugin failed. Deactivate the whole
                         # plugin.
                         self._active = False
                         break
             else:
-                msg = 'Skipping inactive callback %s in plugin.'
+                msg = "Skipping inactive callback %s in plugin."
                 self.logger.debug(msg, str(callback))
 
         return self._active
 
     def _updateLastEventId(self, event):
-        BACKLOG_TIMEOUT = 5 # time in minutes after which we consider a pending event won't happen
+        BACKLOG_TIMEOUT = (
+            5  # time in minutes after which we consider a pending event won't happen
+        )
         if self._lastEventId is not None and event["id"] > self._lastEventId + 1:
             event_date = event["created_at"].replace(tzinfo=None)
-            if datetime.datetime.now() > (event_date + datetime.timedelta(minutes=BACKLOG_TIMEOUT)):
+            if datetime.datetime.now() > (
+                event_date + datetime.timedelta(minutes=BACKLOG_TIMEOUT)
+            ):
                 # the event we've just processed happened more than BACKLOG_TIMEOUT minutes ago so any event
                 # with a lower id should have shown up in the EventLog by now if it actually happened
-                if event["id"]==self._lastEventId+2:
-                    self.logger.info('Event %d never happened - ignoring.', self._lastEventId+1)
+                if event["id"] == self._lastEventId + 2:
+                    self.logger.info(
+                        "Event %d never happened - ignoring.", self._lastEventId + 1
+                    )
                 else:
-                    self.logger.info('Events %d-%d never happened - ignoring.', self._lastEventId+1, event["id"]-1)
+                    self.logger.info(
+                        "Events %d-%d never happened - ignoring.",
+                        self._lastEventId + 1,
+                        event["id"] - 1,
+                    )
             else:
                 # in this case, we want to add the missing events to the backlog as they could show up in the
                 # EventLog within BACKLOG_TIMEOUT minutes, during which we'll keep asking for the same range
                 # them to show up until they expire
-                expiration = datetime.datetime.now() + datetime.timedelta(minutes=BACKLOG_TIMEOUT)
+                expiration = datetime.datetime.now() + datetime.timedelta(
+                    minutes=BACKLOG_TIMEOUT
+                )
                 for skippedId in range(self._lastEventId + 1, event["id"]):
-                    self.logger.info('Adding event id %d to backlog.', skippedId)
+                    self.logger.info("Adding event id %d to backlog.", skippedId)
                     self._backlog[skippedId] = expiration
         self._lastEventId = event["id"]
 
@@ -900,12 +1015,13 @@ class Registrar(object):
     """
     See public API docs in docs folder.
     """
+
     def __init__(self, plugin):
         """
         Wrap a plugin so it can be passed to a user.
         """
         self._plugin = plugin
-        self._allowed = ['logger', 'setEmails', 'registerCallback']
+        self._allowed = ["logger", "setEmails", "registerCallback"]
 
     def getLogger(self):
         """
@@ -920,7 +1036,9 @@ class Registrar(object):
     def __getattr__(self, name):
         if name in self._allowed:
             return getattr(self._plugin, name)
-        raise AttributeError("type object '%s' has no attribute '%s'" % (type(self).__name__, name))
+        raise AttributeError(
+            "type object '%s' has no attribute '%s'" % (type(self).__name__, name)
+        )
 
 
 class Callback(object):
@@ -928,7 +1046,16 @@ class Callback(object):
     A part of a plugin that can be called to process a Shotgun event.
     """
 
-    def __init__(self, callback, plugin, engine, shotgun, matchEvents=None, args=None, stopOnError=True):
+    def __init__(
+        self,
+        callback,
+        plugin,
+        engine,
+        shotgun,
+        matchEvents=None,
+        args=None,
+        stopOnError=True,
+    ):
         """
         @param callback: The function to run when a Shotgun event occurs.
         @type callback: A function object.
@@ -946,7 +1073,9 @@ class Callback(object):
         @raise TypeError: If the callback is not a callable object.
         """
         if not callable(callback):
-            raise TypeError('The callback must be a callable object (function, method or callable class instance).')
+            raise TypeError(
+                "The callback must be a callable object (function, method or callable class instance)."
+            )
 
         self._name = None
         self._shotgun = shotgun
@@ -960,34 +1089,36 @@ class Callback(object):
         self._active = True
 
         # Find a name for this object
-        if hasattr(callback, '__name__'):
+        if hasattr(callback, "__name__"):
             self._name = callback.__name__
-        elif hasattr(callback, '__class__') and hasattr(callback, '__call__'):
-            self._name = '%s_%s' % (callback.__class__.__name__, hex(id(callback)))
+        elif hasattr(callback, "__class__") and hasattr(callback, "__call__"):
+            self._name = "%s_%s" % (callback.__class__.__name__, hex(id(callback)))
         else:
-            raise ValueError('registerCallback should be called with a function or a callable object instance as callback argument.')
+            raise ValueError(
+                "registerCallback should be called with a function or a callable object instance as callback argument."
+            )
 
         # TODO: Get rid of this protected member access
-        self._logger = logging.getLogger(plugin.logger.name + '.' + self._name)
+        self._logger = logging.getLogger(plugin.logger.name + "." + self._name)
         self._logger.config = self._engine.config
 
     def canProcess(self, event):
         if not self._matchEvents:
             return True
 
-        if '*' in self._matchEvents:
-            eventType = '*'
+        if "*" in self._matchEvents:
+            eventType = "*"
         else:
-            eventType = event['event_type']
+            eventType = event["event_type"]
             if eventType not in self._matchEvents:
                 return False
 
         attributes = self._matchEvents[eventType]
 
-        if attributes is None or '*' in attributes:
+        if attributes is None or "*" in attributes:
             return True
 
-        if event['attribute_name'] and event['attribute_name'] in attributes:
+        if event["attribute_name"] and event["attribute_name"] in attributes:
             return True
 
         return False
@@ -1004,7 +1135,7 @@ class Callback(object):
         """
         # set session_uuid for UI updates
         if self._engine._use_session_uuid:
-            self._shotgun.set_session_uuid(event['session_uuid'])
+            self._shotgun.set_session_uuid(event["session_uuid"])
 
         if self._engine.timing_logger:
             start_time = datetime.datetime.now(SG_TIMEZONE.local)
@@ -1022,7 +1153,11 @@ class Callback(object):
                 stack.append(tb.tb_frame)
                 tb = tb.tb_next
 
-            msg = 'An error occured processing an event.\n\n%s\n\nLocal variables at outer most frame in plugin:\n\n%s'
+            msg = "An error occured processing an event.\n\n%s\n\nLocal variables at outer most frame in plugin:\n\n%s"
+            self._logger.critical(
+                msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals)
+            )
+
             if sentry_sdk is not None:
                 _sen_extra = {'plugin_name': self._plugin.getName(),
                               'event_id': str(event['id']),
@@ -1037,16 +1172,26 @@ class Callback(object):
                 self._logger.critical(msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals), extra=_sen_extra)
             else:
                 self._logger.critical(msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals))
+
             if self._stopOnError:
                 self._active = False
 
         if self._engine.timing_logger:
-            callback_name = self._logger.name.replace('plugin.', '')
+            callback_name = self._logger.name.replace("plugin.", "")
             end_time = datetime.datetime.now(SG_TIMEZONE.local)
             duration = self._prettyTimeDeltaFormat(end_time - start_time)
-            delay = self._prettyTimeDeltaFormat(start_time - event['created_at'])
+            delay = self._prettyTimeDeltaFormat(start_time - event["created_at"])
             msg_format = "event_id=%d created_at=%s callback=%s start=%s end=%s duration=%s error=%s delay=%s"
-            data = [event['id'], event['created_at'].isoformat(), callback_name, start_time.isoformat(), end_time.isoformat(), duration, str(error), delay]
+            data = [
+                event["id"],
+                event["created_at"].isoformat(),
+                callback_name,
+                start_time.isoformat(),
+                end_time.isoformat(),
+                duration,
+                str(error),
+                delay,
+            ]
             self._engine.timing_logger.info(msg_format, *data)
 
         return self._active
@@ -1055,7 +1200,13 @@ class Callback(object):
         days, remainder = divmod(time_delta.total_seconds(), 86400)
         hours, remainder = divmod(remainder, 3600)
         minutes, seconds = divmod(remainder, 60)
-        return "%02d:%02d:%02d:%02d.%06d" % (days, hours, minutes, seconds, time_delta.microseconds)
+        return "%02d:%02d:%02d:%02d.%06d" % (
+            days,
+            hours,
+            minutes,
+            seconds,
+            time_delta.microseconds,
+        )
 
     def isActive(self):
         """
@@ -1084,22 +1235,15 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
     """
 
     LEVEL_SUBJECTS = {
-        logging.ERROR: 'ERROR - Shotgun event daemon.',
-        logging.CRITICAL: 'CRITICAL - Shotgun event daemon.',
+        logging.ERROR: "ERROR - SG event daemon.",
+        logging.CRITICAL: "CRITICAL - SG event daemon.",
     }
 
-    def __init__(self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None):
-        args = [smtpServer, fromAddr, toAddrs, emailSubject]
+    def __init__(
+        self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None
+    ):
+        args = [smtpServer, fromAddr, toAddrs, emailSubject, credentials]
         if credentials:
-            # Python 2.6 implemented the credentials argument
-            if CURRENT_PYTHON_VERSION >= PYTHON_26:
-                args.append(credentials)
-            else:
-                if isinstance(credentials, tuple):
-                    self.username, self.password = credentials
-                else:
-                    self.username = None
-
             # Python 2.7 implemented the secure argument
             if CURRENT_PYTHON_VERSION >= PYTHON_27:
                 args.append(secure)
@@ -1111,7 +1255,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
     def getSubject(self, record):
         subject = logging.handlers.SMTPHandler.getSubject(self, record)
         if record.levelno in self.LEVEL_SUBJECTS:
-            return subject + ' ' + self.LEVEL_SUBJECTS[record.levelno]
+            return subject + " " + self.LEVEL_SUBJECTS[record.levelno]
         return subject
 
     def emit(self, record):
@@ -1120,29 +1264,24 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
 
         Format the record and send it to the specified addressees.
         """
-        # If the socket timeout isn't None, in Python 2.4 the socket read
-        # following enabling starttls() will hang. The default timeout will
-        # be reset to 60 later in 2 locations because Python 2.4 doesn't support
-        # except and finally in the same try block.
-        if CURRENT_PYTHON_VERSION >= PYTHON_25:
-            socket.setdefaulttimeout(None)
 
         # Mostly copied from Python 2.7 implementation.
-        # Using email.Utils instead of email.utils for 2.4 compat.
         try:
             import smtplib
-            from email.Utils import formatdate
+            from email.utils import formatdate
+
             port = self.mailport
             if not port:
                 port = smtplib.SMTP_PORT
-            smtp = smtplib.SMTP()
-            smtp.connect(self.mailhost, port)
+            smtp = smtplib.SMTP(self.mailhost, port)
             msg = self.format(record)
             msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s" % (
-                            self.fromaddr,
-                            ",".join(self.toaddrs),
-                            self.getSubject(record),
-                            formatdate(), msg)
+                self.fromaddr,
+                ",".join(self.toaddrs),
+                self.getSubject(record),
+                formatdate(),
+                msg,
+            )
             if self.username:
                 if self.secure is not None:
                     smtp.ehlo()
@@ -1152,18 +1291,16 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
             smtp.sendmail(self.fromaddr, self.toaddrs, msg)
             smtp.close()
         except (KeyboardInterrupt, SystemExit):
-            socket.setdefaulttimeout(60)
             raise
         except:
             self.handleError(record)
-
-        socket.setdefaulttimeout(60)
 
 
 class EventDaemonError(Exception):
     """
     Base error for the Shotgun event system.
     """
+
     pass
 
 
@@ -1171,14 +1308,17 @@ class ConfigError(EventDaemonError):
     """
     Used when an error is detected in the config file.
     """
+
     pass
 
 
-if sys.platform == 'win32':
+if sys.platform == "win32":
+
     class WindowsService(win32serviceutil.ServiceFramework):
         """
         Windows service wrapper
         """
+
         _svc_name_ = "ShotgunEventDaemon"
         _svc_display_name_ = "Shotgun Event Handler"
 
@@ -1202,7 +1342,7 @@ if sys.platform == 'win32':
             servicemanager.LogMsg(
                 servicemanager.EVENTLOG_INFORMATION_TYPE,
                 servicemanager.PYS_SERVICE_STARTED,
-                (self._svc_name_, '')
+                (self._svc_name_, ""),
             )
             self.main()
 
@@ -1217,15 +1357,20 @@ class LinuxDaemon(daemonizer.Daemon):
     """
     Linux Daemon wrapper or wrapper used for foreground operation on Windows
     """
+
     def __init__(self):
         self._engine = Engine(_getConfigPath())
-        super(LinuxDaemon, self).__init__('shotgunEvent', self._engine.config.getEnginePIDFile())
+        super(LinuxDaemon, self).__init__(
+            "shotgunEvent", self._engine.config.getEnginePIDFile()
+        )
 
     def start(self, daemonize=True):
         if not daemonize:
             # Setup the stdout logger
             handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+            handler.setFormatter(
+                logging.Formatter("%(levelname)s:%(name)s:%(message)s")
+            )
             logging.getLogger().addHandler(handler)
 
         super(LinuxDaemon, self).start(daemonize)
@@ -1243,11 +1388,17 @@ class LinuxDaemon(daemonizer.Daemon):
 def main():
     """
     """
+    if CURRENT_PYTHON_VERSION <= PYTHON_26:
+        print(
+            "Python 2.5 and older is not supported anymore. Please use Python 2.6 or newer."
+        )
+        return 3
+
     action = None
     if len(sys.argv) > 1:
         action = sys.argv[1]
 
-    if sys.platform == 'win32' and action != 'foreground':
+    if sys.platform == "win32" and action != "foreground":
         win32serviceutil.HandleCommandLine(WindowsService)
         return 0
 
@@ -1256,13 +1407,13 @@ def main():
 
         # Find the function to call on the daemon and call it
         func = getattr(daemon, action, None)
-        if action[:1] != '_' and func is not None:
+        if action[:1] != "_" and func is not None:
             func()
             return 0
 
-        print "Unknown command: %s" % action
+        print("Unknown command: %s" % action)
 
-    print "usage: %s start|stop|restart|foreground" % sys.argv[0]
+    print("usage: %s start|stop|restart|foreground" % sys.argv[0])
     return 2
 
 
@@ -1270,11 +1421,11 @@ def _getConfigPath():
     """
     Get the path of the shotgunEventDaemon configuration file.
     """
-    paths = ['/etc', os.path.dirname(__file__)]
+    paths = ["/etc", os.path.dirname(__file__)]
 
     # Get the current path of the daemon script
     scriptPath = sys.argv[0]
-    if scriptPath != '' and scriptPath != '-c':
+    if scriptPath != "" and scriptPath != "-c":
         # Make absolute path and eliminate any symlinks if any.
         scriptPath = os.path.abspath(scriptPath)
         scriptPath = os.path.realpath(scriptPath)
@@ -1284,13 +1435,13 @@ def _getConfigPath():
 
     # Search for a config file.
     for path in paths:
-        path = os.path.join(path, 'shotgunEventDaemon.conf')
+        path = os.path.join(path, "shotgunEventDaemon.conf")
         if os.path.exists(path):
             return path
 
     # No config file was found
-    raise EventDaemonError('Config path not found, searched %s' % ', '.join(paths))
+    raise EventDaemonError("Config path not found, searched %s" % ", ".join(paths))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
