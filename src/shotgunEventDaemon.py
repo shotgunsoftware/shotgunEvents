@@ -369,7 +369,7 @@ class Engine(object):
             self.log.warning("Keyboard interrupt. Cleaning up...")
         except Exception as err:
             msg = "Crash!!!!! Unexpected error (%s) in main loop.\n\n%s"
-            self.log.critical(msg, type(err), traceback.format_exc(err))
+            self.log.critical(msg, type(err), traceback.format_exc())
 
     def _loadEventIdData(self):
         """
@@ -444,8 +444,7 @@ class Engine(object):
                 fh.close()
             except OSError as err:
                 raise EventDaemonError(
-                    "Could not load event id from file.\n\n%s"
-                    % traceback.format_exc(err)
+                    "Could not load event id from file.\n\n%s" % traceback.format_exc()
                 )
         else:
             # No id file?
@@ -606,7 +605,7 @@ class Engine(object):
                         self.log.error(
                             "Can not write event id data to %s.\n\n%s",
                             eventIdFile,
-                            traceback.format_exc(err),
+                            traceback.format_exc(),
                         )
                     break
             else:
