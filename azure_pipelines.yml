@@ -14,7 +14,7 @@ resources:
     - repository: templates
       type: github
       name: shotgunsoftware/tk-ci-tools
-      ref: refs/heads/master
+      ref: python-310-311
       endpoint: shotgunsoftware
 
 # We want builds to trigger for 3 reasons:
