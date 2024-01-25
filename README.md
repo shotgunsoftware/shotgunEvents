@@ -3,11 +3,11 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Linting](https://img.shields.io/badge/PEP8%20by-Hound%20CI-a873d1.svg)](https://houndci.com)
 
-# Shotgun Event Framework
+# Flow Production Tracking Event Framework
 This software was originaly developed by [Patrick
 Boucher](http://www.patrickboucher.com) with support from [Rodeo
 Fx](http://rodeofx.com) and Oblique. It is now part of
-[Shotgun Software](http://www.shotgunsoftware.com)'s [open source
+[Flow Production Tracking Software](http://www.shotgunsoftware.com)'s [open source
 initiative](https://github.com/shotgunsoftware).
 
 This software is provided under the MIT License that can be found in the LICENSE
@@ -16,7 +16,7 @@ file or at the [Open Source Initiative](http://www.opensource.org/licenses/mit-l
 
 ## Overview
 
-When you want to access the Shotgun event stream, the preferred way to do so it
+When you want to access the Flow Production Tracking event stream, the preferred way to do so it
 to monitor the events table, get any new events, process them and repeat.
 
 A lot of stuff is required for this process to work successfully, stuff that may
@@ -34,7 +34,7 @@ The daemon handles:
 - Registering plugins from one or more specified paths.
 - Deactivate any crashing plugins.
 - Reloading plugins when they change on disk.
-- Monitoring the Shotgun event stream.
+- Monitoring the Flow Production Tracking event stream.
 - Remembering the last processed event id and any backlog.
 - Starting from the last processed event id on daemon startup.
 - Catching any connection errors.

@@ -123,5 +123,5 @@ from: support@yourdomain.com
 to: you@yourdomain.com
 
 # An email subject prefix that can be used by mail clients to help sort out
-# alerts sent by the Shotgun event framework.
+# alerts sent by the Flow Production Tracking event framework.
 subject: [SG]

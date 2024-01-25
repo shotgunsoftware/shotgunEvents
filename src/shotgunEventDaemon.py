@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 #
-# Init file for Shotgun event daemon
+# Init file for Flow Production Tracking event daemon
 #
 # chkconfig: 345 99 00
-# description: Shotgun event daemon
+# description: Flow Production Tracking event daemon
 #
 ### BEGIN INIT INFO
 # Provides: shotgunEvent
@@ -12,8 +12,8 @@
 # Required-Stop: $network
 # Should-Stop: $remote_fs
 # Default-Start: 2 3 4 5
-# Short-Description: Shotgun event daemon
-# Description: Shotgun event daemon
+# Short-Description: Flow Production Tracking event daemon
+# Description: Flow Production Tracking event daemon
 ### END INIT INFO
 
 """
@@ -530,7 +530,7 @@ class Engine(object):
         Fetch new events from Shotgun.
 
         @return: Recent events that need to be processed by the engine.
-        @rtype: I{list} of Shotgun event dictionaries.
+        @rtype: I{list} of Flow Production Tracking event dictionaries.
         """
         nextEventId = None
         for newId in [
@@ -1004,7 +1004,7 @@ class Registrar(object):
 
 class Callback(object):
     """
-    A part of a plugin that can be called to process a Shotgun event.
+    A part of a plugin that can be called to process a Flow Production Tracking event.
     """
 
     def __init__(
@@ -1018,7 +1018,7 @@ class Callback(object):
         stopOnError=True,
     ):
         """
-        @param callback: The function to run when a Shotgun event occurs.
+        @param callback: The function to run when a Flow Production Tracking event occurs.
         @type callback: A function object.
         @param engine: The engine that will dispatch to this callback.
         @type engine: L{Engine}.
@@ -1090,7 +1090,7 @@ class Callback(object):
         If an error occurs, it will be logged appropriately and the callback
         will be deactivated.
 
-        @param event: The Shotgun event to process.
+        @param event: The Flow Production Tracking event to process.
         @type event: I{dict}
         """
         # set session_uuid for UI updates
@@ -1242,7 +1242,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
 
 class EventDaemonError(Exception):
     """
-    Base error for the Shotgun event system.
+    Base error for the Flow Production Tracking event system.
     """
 
     pass
@@ -1264,7 +1264,7 @@ if sys.platform == "win32":
         """
 
         _svc_name_ = "ShotgunEventDaemon"
-        _svc_display_name_ = "Shotgun Event Handler"
+        _svc_display_name_ = "Flow Production Tracking Event Handler"
 
         def __init__(self, args):
             win32serviceutil.ServiceFramework.__init__(self, args)

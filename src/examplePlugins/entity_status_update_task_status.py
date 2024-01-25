@@ -10,7 +10,7 @@ import shotgun_api3
 
 """
 This plugin was created for the Shotgun Developer Learning series video titled,
-"The Shotgun Event Daemon." See this page for details:
+"The Flow Production Tracking Event Daemon." See this page for details:
 
 https://support.shotgunsoftware.com/hc/en-us/articles/115002525494-SG-Learning-Developer-Training
 
@@ -29,7 +29,7 @@ the "args" in the registerCallbacks function.
 
 def registerCallbacks(reg):
     """
-    This function is run when the Shotgun Event Daemon starts, if this file
+    This function is run when the Flow Production Tracking Event Daemon starts, if this file
     (__file__) lives in the plugin directory specified by the daemon's config
     file. Typically the registerCallback method should be called from the
     available reg object.
