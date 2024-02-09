@@ -7,7 +7,7 @@
 This software was originaly developed by [Patrick
 Boucher](http://www.patrickboucher.com) with support from [Rodeo
 Fx](http://rodeofx.com) and Oblique. It is now part of
-[Flow Production Tracking Software](http://www.shotgunsoftware.com)'s [open source
+[Flow Production Tracking Software](https://www.autodesk.com/products/flow-production-tracking)'s [open source
 initiative](https://github.com/shotgunsoftware).
 
 This software is provided under the MIT License that can be found in the LICENSE
