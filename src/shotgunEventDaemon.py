@@ -1367,6 +1367,7 @@ def _getConfigPath():
     if custom_conf_path:
         custom_conf_path_list = custom_conf_path.split(os.pathsep)
         paths.extend(custom_conf_path_list)
+        paths.reverse()
 
     # Get the current path of the daemon script
     scriptPath = sys.argv[0]
