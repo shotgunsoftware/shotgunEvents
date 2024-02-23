@@ -59,7 +59,6 @@ import daemonizer
 import shotgun_api3 as sg
 from shotgun_api3.lib.sgtimezone import SgTimezone
 
-
 SG_TIMEZONE = SgTimezone()
 CURRENT_PYTHON_VERSION = StrictVersion(sys.version.split()[0])
 PYTHON_26 = StrictVersion("2.6")
@@ -106,14 +105,14 @@ def _removeHandlersFromLogger(logger, handlerTypes=None):
 
 
 def _addMailHandlerToLogger(
-    logger,
-    smtpServer,
-    fromAddr,
-    toAddrs,
-    emailSubject,
-    username=None,
-    password=None,
-    secure=None,
+        logger,
+        smtpServer,
+        fromAddr,
+        toAddrs,
+        emailSubject,
+        username=None,
+        password=None,
+        secure=None,
 ):
     """
     Configure a logger with a handler that sends emails to specified
@@ -241,8 +240,8 @@ class Config(configparser.SafeConfigParser):
 
     def getTimingLogFile(self):
         if (
-            not self.has_option("daemon", "timing_log")
-            or self.get("daemon", "timing_log") != "on"
+                not self.has_option("daemon", "timing_log")
+                or self.get("daemon", "timing_log") != "on"
         ):
             return None
 
@@ -861,13 +860,13 @@ class Plugin(object):
             self._active = False
 
     def registerCallback(
-        self,
-        sgScriptName,
-        sgScriptKey,
-        callback,
-        matchEvents=None,
-        args=None,
-        stopOnError=True,
+            self,
+            sgScriptName,
+            sgScriptKey,
+            callback,
+            matchEvents=None,
+            args=None,
+            stopOnError=True,
     ):
         """
         Register a callback in the plugin.
@@ -930,7 +929,7 @@ class Plugin(object):
         if self._lastEventId is not None and event["id"] > self._lastEventId + 1:
             event_date = event["created_at"].replace(tzinfo=None)
             if datetime.datetime.now() > (
-                event_date + datetime.timedelta(minutes=BACKLOG_TIMEOUT)
+                    event_date + datetime.timedelta(minutes=BACKLOG_TIMEOUT)
             ):
                 # the event we've just processed happened more than BACKLOG_TIMEOUT minutes ago so any event
                 # with a lower id should have shown up in the EventLog by now if it actually happened
@@ -1008,14 +1007,14 @@ class Callback(object):
     """
 
     def __init__(
-        self,
-        callback,
-        plugin,
-        engine,
-        shotgun,
-        matchEvents=None,
-        args=None,
-        stopOnError=True,
+            self,
+            callback,
+            plugin,
+            engine,
+            shotgun,
+            matchEvents=None,
+            args=None,
+            stopOnError=True,
     ):
         """
         @param callback: The function to run when a Shotgun event occurs.
@@ -1184,7 +1183,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
     }
 
     def __init__(
-        self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None
+            self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None
     ):
         args = [smtpServer, fromAddr, toAddrs, emailSubject, credentials]
         if credentials:
@@ -1257,7 +1256,6 @@ class ConfigError(EventDaemonError):
 
 
 if sys.platform == "win32":
-
     class WindowsService(win32serviceutil.ServiceFramework):
         """
         Windows service wrapper
@@ -1365,6 +1363,10 @@ def _getConfigPath():
     Get the path of the shotgunEventDaemon configuration file.
     """
     paths = ["/etc", os.path.dirname(__file__)]
+    custom_conf_path = os.getenv("SG_CONF_DIR")
+    if custom_conf_path:
+        custom_conf_path_list = custom_conf_path.split(os.pathsep)
+        paths.extend(custom_conf_path_list)
 
     # Get the current path of the daemon script
     scriptPath = sys.argv[0]
