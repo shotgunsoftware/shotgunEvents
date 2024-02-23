@@ -169,7 +169,10 @@ class Config(configparser.SafeConfigParser):
         return self.get("daemon", "pidFile")
 
     def getPluginPaths(self):
-        return [s.strip() for s in self.get("plugins", "paths").split(",")]
+        paths = [s.strip() for s in self.get("plugins", "paths").split(",")]
+        current_dir = os.path.dirname(__file__)
+        paths.append(os.path.join(current_dir, "plugins"))
+        return paths
 
     def getSMTPServer(self):
         return self.get("emails", "server")
