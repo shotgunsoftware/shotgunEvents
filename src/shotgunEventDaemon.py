@@ -168,7 +168,7 @@ class Config(configparser.ConfigParser):
 
     def getPluginPaths(self):
         return [s.strip() for s in self.get("plugins", "paths").split(",")]
-    
+
     def getSMTPEnabled(self):
         return self.getboolean("emails", "enabled")
 
@@ -460,7 +460,6 @@ class Engine(object):
             self._saveEventIdData()
 
     def _getLastEventIdFromDatabase(self):
-
         conn_attempts = 0
         lastEventId = None
         while lastEventId is None:
