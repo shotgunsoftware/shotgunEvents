@@ -44,8 +44,8 @@ import socket
 import sys
 import time
 import traceback
-from six.moves import configparser
-import six.moves.cPickle as pickle
+import configparser
+import pickle
 
 from distutils.version import StrictVersion
 
@@ -61,9 +61,6 @@ from shotgun_api3.lib.sgtimezone import SgTimezone
 
 
 SG_TIMEZONE = SgTimezone()
-CURRENT_PYTHON_VERSION = StrictVersion(sys.version.split()[0])
-PYTHON_26 = StrictVersion("2.6")
-PYTHON_27 = StrictVersion("2.7")
 
 EMAIL_FORMAT_STRING = """Time: %(asctime)s
 Logger: %(name)s
@@ -140,9 +137,9 @@ def _addMailHandlerToLogger(
         logger.addHandler(mailHandler)
 
 
-class Config(configparser.SafeConfigParser):
+class Config(configparser.ConfigParser):
     def __init__(self, path):
-        configparser.SafeConfigParser.__init__(self, os.environ)
+        configparser.ConfigParser.__init__(self, os.environ)
         self.read(path)
 
     def getShotgunURL(self):
@@ -171,6 +168,9 @@ class Config(configparser.SafeConfigParser):
 
     def getPluginPaths(self):
         return [s.strip() for s in self.get("plugins", "paths").split(",")]
+    
+    def getSMTPEnabled(self):
+        return self.getboolean("emails", "enabled")
 
     def getSMTPServer(self):
         return self.get("emails", "server")
@@ -313,6 +313,9 @@ class Engine(object):
         _removeHandlersFromLogger(logger, logging.handlers.SMTPHandler)
 
         if emails is False:
+            return
+
+        if not self.config.getSMTPEnabled():
             return
 
         smtpServer = self.config.getSMTPServer()
@@ -1188,11 +1191,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
     ):
         args = [smtpServer, fromAddr, toAddrs, emailSubject, credentials]
         if credentials:
-            # Python 2.7 implemented the secure argument
-            if CURRENT_PYTHON_VERSION >= PYTHON_27:
-                args.append(secure)
-            else:
-                self.secure = secure
+            args.append(secure)
 
         logging.handlers.SMTPHandler.__init__(self, *args)
 
@@ -1217,7 +1216,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
             port = self.mailport
             if not port:
                 port = smtplib.SMTP_PORT
-            smtp = smtplib.SMTP(self.mailhost, port)
+            smtp = smtplib.SMTP(self.mailhost, port, timeout=5)
             msg = self.format(record)
             msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s" % (
                 self.fromaddr,
@@ -1331,10 +1330,8 @@ class LinuxDaemon(daemonizer.Daemon):
 
 def main():
     """ """
-    if CURRENT_PYTHON_VERSION <= PYTHON_26:
-        print(
-            "Python 2.5 and older is not supported anymore. Please use Python 2.6 or newer."
-        )
+    if sys.version_info[0] == 2:
+        print("Python 2 is not supported anymore. Please use Python 3.")
         return 3
 
     action = None

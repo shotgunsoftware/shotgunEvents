@@ -5,6 +5,3 @@
 # this software in either electronic or hard copy form.
 #
 # List of Python packages needed by this tool
-
-# Used for Python2/3 compatibility
-six

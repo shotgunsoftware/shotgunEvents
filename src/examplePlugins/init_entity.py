@@ -8,7 +8,6 @@
 # See docs folder for detailed usage info.
 
 import os
-import six
 import shotgun_api3
 
 
@@ -230,8 +229,8 @@ def init_entity(sg, logger, event, args):
     update_data = {}
     # Convert anything that's currently unicode to a string.
     for key, value in args["initial_data"].items():
-        key = six.ensure_str(key)
-        value = six.ensure_str(value)
+        key = str(key)
+        value = str(value)
 
         # If the field is already populated, don't clobber it unless
         # we've been told to.

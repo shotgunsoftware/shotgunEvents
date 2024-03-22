@@ -106,6 +106,8 @@ paths: /usr/local/shotgun/plugins
 #
 # All of these value must be provided for there to be email alerts sent out.
 
+enabled: True
+
 # The server that should be used for smtp connections. The username and password
 # values can be uncommented to supply credentials for the smtp connection. The
 # smtp port can also be uncommented to supply an alternate port such as 587 for
