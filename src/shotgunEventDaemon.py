@@ -44,10 +44,9 @@ import socket
 import sys
 import time
 import traceback
+from pathlib import Path
 from six.moves import configparser
 import six.moves.cPickle as pickle
-
-from distutils.version import StrictVersion
 
 if sys.platform == "win32":
     import win32serviceutil
@@ -59,11 +58,13 @@ import daemonizer
 import shotgun_api3 as sg
 from shotgun_api3.lib.sgtimezone import SgTimezone
 
+import event_config
+
+# We need to run this on import so we can use the service name as a class
+# attribute for the WindowsService
+CONFIG = event_config.Config(event_config.getConfigPath())
 
 SG_TIMEZONE = SgTimezone()
-CURRENT_PYTHON_VERSION = StrictVersion(sys.version.split()[0])
-PYTHON_26 = StrictVersion("2.6")
-PYTHON_27 = StrictVersion("2.7")
 
 EMAIL_FORMAT_STRING = """Time: %(asctime)s
 Logger: %(name)s
@@ -140,7 +141,7 @@ def _addMailHandlerToLogger(
         logger.addHandler(mailHandler)
 
 
-class Config(configparser.SafeConfigParser):
+class OldConfig(configparser.SafeConfigParser):
     def __init__(self, path):
         configparser.SafeConfigParser.__init__(self, os.environ)
         self.read(path)
@@ -260,7 +261,7 @@ class Engine(object):
         self._eventIdData = {}
 
         # Read/parse the config
-        self.config = Config(configPath)
+        self.config = event_config.Config(configPath)
 
         # Get config values
         self._pluginCollections = [
@@ -272,10 +273,10 @@ class Engine(object):
             self.config.getEngineScriptKey(),
             http_proxy=self.config.getEngineProxyServer(),
         )
-        self._max_conn_retries = self.config.getint("daemon", "max_conn_retries")
-        self._conn_retry_sleep = self.config.getint("daemon", "conn_retry_sleep")
-        self._fetch_interval = self.config.getint("daemon", "fetch_interval")
-        self._use_session_uuid = self.config.getboolean("shotgun", "use_session_uuid")
+        self._max_conn_retries = self.config.max_conn_retries
+        self._conn_retry_sleep = self.config.conn_retry_sleep
+        self._fetch_interval = self.config.fetch_interval
+        self._use_session_uuid = self.config.use_session_uuid
 
         # Setup the loggers for the main engine
         if self.config.getLogMode() == 0:
@@ -1188,11 +1189,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
     ):
         args = [smtpServer, fromAddr, toAddrs, emailSubject, credentials]
         if credentials:
-            # Python 2.7 implemented the secure argument
-            if CURRENT_PYTHON_VERSION >= PYTHON_27:
-                args.append(secure)
-            else:
-                self.secure = secure
+            args.append(secure)
 
         logging.handlers.SMTPHandler.__init__(self, *args)
 
@@ -1255,7 +1252,6 @@ class ConfigError(EventDaemonError):
 
     pass
 
-
 if sys.platform == "win32":
 
     class WindowsService(win32serviceutil.ServiceFramework):
@@ -1263,8 +1259,9 @@ if sys.platform == "win32":
         Windows service wrapper
         """
 
-        _svc_name_ = "ShotgunEventDaemon"
-        _svc_display_name_ = "Flow Production Tracking Event Handler"
+
+        _svc_name_ = CONFIG.service_name
+        _svc_display_name_ = CONFIG.service_name
 
         def __init__(self, args):
             win32serviceutil.ServiceFramework.__init__(self, args)
@@ -1329,23 +1326,22 @@ class LinuxDaemon(daemonizer.Daemon):
         self._engine.stop()
 
 
-def main():
-    """ """
-    if CURRENT_PYTHON_VERSION <= PYTHON_26:
-        print(
-            "Python 2.5 and older is not supported anymore. Please use Python 2.6 or newer."
-        )
-        return 3
+def _getConfigPath():
+    """
+    Find the config path relative to this file defined by top level constant
 
-    action = None
+    """
+
+    return CONFIG.path
+
+
+def main(action=None):
+    """ """
+
     if len(sys.argv) > 1:
         action = sys.argv[1]
 
-    if sys.platform == "win32" and action != "foreground":
-        win32serviceutil.HandleCommandLine(WindowsService)
-        return 0
-
-    if action:
+    if action == "foreground":
         daemon = LinuxDaemon()
 
         # Find the function to call on the daemon and call it
@@ -1356,34 +1352,12 @@ def main():
 
         print("Unknown command: %s" % action)
 
+    elif not action == "foreground" and len(sys.argv) > 1:
+        win32serviceutil.HandleCommandLine(WindowsService)
+        return 0
+
     print("usage: %s start|stop|restart|foreground" % sys.argv[0])
     return 2
-
-
-def _getConfigPath():
-    """
-    Get the path of the shotgunEventDaemon configuration file.
-    """
-    paths = ["/etc", os.path.dirname(__file__)]
-
-    # Get the current path of the daemon script
-    scriptPath = sys.argv[0]
-    if scriptPath != "" and scriptPath != "-c":
-        # Make absolute path and eliminate any symlinks if any.
-        scriptPath = os.path.abspath(scriptPath)
-        scriptPath = os.path.realpath(scriptPath)
-
-        # Add the script's directory to the paths we'll search for the config.
-        paths[:0] = [os.path.dirname(scriptPath)]
-
-    # Search for a config file.
-    for path in paths:
-        path = os.path.join(path, "shotgunEventDaemon.conf")
-        if os.path.exists(path):
-            return path
-
-    # No config file was found
-    raise EventDaemonError("Config path not found, searched %s" % ", ".join(paths))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,20 @@
+Save the setup_example.json file as setup.json in the src directory.
+    setup.json is not tracked by the git repo
+
+Update all <VALUES> to configure the event handler.
+    Example:
+        "name": "<SERVICE NAME HERE>" --> "name": "ttfsecure_event_handler"
+
+Run 'python ./setup_config.py' to setup the config the first time.
+    This will create a config.json file with any relative paths resolved.
+    config.json is not tracked by the git repo
+
+Run 'python ./shotgunEventDaemon.py install' to install the service.
+
+Run 'python ./shotgunEventDaemon.py foreground' to run the daemon in foreground mode.
+
+Run 'python ./shotgunEventDaemon.py start' to start the service.
+
+Run 'python ./shotgunEventDaemon.py stop' to stop the service.
+
+Run 'python ./shotgunEventDaemon.py remove' to remove the service.

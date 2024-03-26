@@ -1,0 +1,41 @@
+{
+  "service": {
+    "name": "<SERVICE NAME HERE>",
+    "description": "<SERVICE NAME HERE>",
+    "pid_filename": "{service_name}.pid",
+    "event_id_filename": "{service_name}.id",
+    "log_mode": 1,
+    "log_dir": "../../logs",
+    "log_filename": "{service_name}.log",
+    "log_level": "20",
+    "timing_log": "on",
+    "conn_retry_sleep": 60,
+    "max_conn_retries": 5,
+    "fetch_interval": 5,
+    "max_event_batch_size": 500
+  },
+  "flow": {
+    "server": "https://your.server.com",
+    "script_name": "<SCRIPT NAME HERE>",
+    "script_key": "<SCRIPT KEY HERE>",
+    "proxy_server": "",
+    "use_session_uuid": true
+  },
+  "plugins": {
+    "paths": [
+      "../../plugins"
+    ]
+  },
+  "email": {
+    "server": "smtp.yourdomain.com",
+    "port": 587,
+    "use_tls": true,
+    "username": "username",
+    "password": "password",
+    "from": "support@yourdomain.com",
+    "to": [
+      "you@yourdomain.com"
+    ],
+    "subject": "{server} - {script_name} - Flow Event Handler"
+  }
+}

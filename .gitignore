@@ -2,3 +2,5 @@ docs/_build/doctrees
 shotgunEventDaemon.conf
 *.pyc
 .idea
+config.json
+setup.json
