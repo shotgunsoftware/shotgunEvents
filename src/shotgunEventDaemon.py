@@ -55,7 +55,7 @@ if sys.platform == "win32":
     import win32event
     import servicemanager
 
-import daemonizer
+from shotgunEvents import daemonizer
 import shotgun_api3 as sg
 from shotgun_api3.lib.sgtimezone import SgTimezone
 
@@ -286,14 +286,14 @@ class Engine(object):
             print(self.config.getLogFile())
 
             # Set the engine logger for email output.
-            self.log = logging.getLogger("engine")
-            self.setEmailsOnLogger(self.log, True)
+            self.log = logging.getLogger('engine')
+            self.setEmailsOnLogger(self.log, self.config.getboolean('emails', 'enabled'))
         else:
             # Set the engine logger for file and email output.
             self.log = logging.getLogger("engine")
             self.log.config = self.config
             _setFilePathOnLogger(self.log, self.config.getLogFile())
-            self.setEmailsOnLogger(self.log, True)
+            self.setEmailsOnLogger(self.log, self.config.getboolean('emails', 'enabled'))
 
         self.log.setLevel(self.config.getLogLevel())
 
@@ -746,7 +746,8 @@ class Plugin(object):
         # Setup the plugin's logger
         self.logger = logging.getLogger("plugin." + self.getName())
         self.logger.config = self._engine.config
-        self._engine.setEmailsOnLogger(self.logger, True)
+        if self._engine.config.getboolean('emails', 'enabled'):
+            self._engine.setEmailsOnLogger(self.logger, True)
         self.logger.setLevel(self._engine.config.getLogLevel())
         if self._engine.config.getLogMode() == 1:
             _setFilePathOnLogger(
@@ -1267,7 +1268,7 @@ if sys.platform == "win32":
         def __init__(self, args):
             win32serviceutil.ServiceFramework.__init__(self, args)
             self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
-            self._engine = Engine(_getConfigPath())
+            self._engine = Engine(args[0])
 
         def SvcStop(self):
             """
@@ -1299,12 +1300,10 @@ class LinuxDaemon(daemonizer.Daemon):
     """
     Linux Daemon wrapper or wrapper used for foreground operation on Windows
     """
+    def __init__(self, config_path):
+        self._engine = Engine(config_path)
 
-    def __init__(self):
-        self._engine = Engine(_getConfigPath())
-        super(LinuxDaemon, self).__init__(
-            "shotgunEvent", self._engine.config.getEnginePIDFile()
-        )
+        super(LinuxDaemon, self).__init__('shotgunEvent', self._engine.config.getEnginePIDFile())
 
     def start(self, daemonize=True):
         if not daemonize:
@@ -1337,12 +1336,17 @@ def main():
     if len(sys.argv) > 1:
         action = sys.argv[1]
 
-    if sys.platform == "win32" and action != "foreground":
-        win32serviceutil.HandleCommandLine(WindowsService)
+    if len(sys.argv) > 2:
+        config_path = sys.argv[2]
+    else:
+        config_path = _getConfigPath()
+
+    if sys.platform == 'win32' and action != 'foreground':
+        win32serviceutil.HandleCommandLine(WindowsService, argv=[config_path])
         return 0
 
     if action:
-        daemon = LinuxDaemon()
+        daemon = LinuxDaemon(config_path)
 
         # Find the function to call on the daemon and call it
         func = getattr(daemon, action, None)
