@@ -40,8 +40,6 @@ import traceback
 import configparser
 import pickle
 
-from distutils.version import StrictVersion
-
 if sys.platform == "win32":
     import win32serviceutil
     import win32service
