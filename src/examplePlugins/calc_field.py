@@ -7,7 +7,6 @@
 
 # See docs folder for detailed usage info.
 
-from __future__ import division
 import os
 import shotgun_api3
 

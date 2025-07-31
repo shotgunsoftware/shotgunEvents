@@ -23,8 +23,6 @@ folder or an html compiled version at:
 http://shotgunsoftware.github.com/shotgunEvents
 """
 
-from __future__ import print_function
-
 __version__ = "1.0"
 __version_info__ = (1, 0)
 
@@ -306,7 +304,7 @@ class Engine(object):
         else:
             self.timing_logger = None
 
-        super(Engine, self).__init__()
+        super().__init__()
 
     def setEmailsOnLogger(self, logger, emails):
         # Configure the logger for email output
@@ -601,8 +599,9 @@ class Engine(object):
                 if state:
                     try:
                         with open(eventIdFile, "wb") as fh:
-                            # Use protocol 2 so it can also be loaded in Python 2
-                            pickle.dump(self._eventIdData, fh, protocol=2)
+                            pickle.dump(
+                                self._eventIdData, fh, protocol=pickle.HIGHEST_PROTOCOL
+                            )
                     except OSError as err:
                         self.log.error(
                             "Can not write event id data to %s.\n\n%s",
@@ -1302,9 +1301,7 @@ class LinuxDaemon(daemonizer.Daemon):
 
     def __init__(self):
         self._engine = Engine(_getConfigPath())
-        super(LinuxDaemon, self).__init__(
-            "shotgunEvent", self._engine.config.getEnginePIDFile()
-        )
+        super().__init__("shotgunEvent", self._engine.config.getEnginePIDFile())
 
     def start(self, daemonize=True):
         if not daemonize:
@@ -1315,7 +1312,7 @@ class LinuxDaemon(daemonizer.Daemon):
             )
             logging.getLogger().addHandler(handler)
 
-        super(LinuxDaemon, self).start(daemonize)
+        super().start(daemonize)
 
     def _run(self):
         """
@@ -1329,10 +1326,6 @@ class LinuxDaemon(daemonizer.Daemon):
 
 def main():
     """ """
-    if sys.version_info[0] == 2:
-        print("Python 2 is not supported anymore. Please use Python 3.")
-        return 3
-
     action = None
     if len(sys.argv) > 1:
         action = sys.argv[1]

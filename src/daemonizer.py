@@ -3,7 +3,6 @@
 # Taken and modified from:
 # http://www.jejik.com/articles/2007/02/a_simple_unix_linux_daemon_in_python/
 
-from __future__ import print_function
 import atexit
 import os
 import signal
@@ -27,7 +26,7 @@ class Daemon(object):
     def __init__(
         self, serviceName, pidfile, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL
     ):
-        super(Daemon, self).__init__()
+        super().__init__()
 
         self._serviceName = serviceName
         self._stdin = stdin

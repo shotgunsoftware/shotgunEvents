@@ -221,9 +221,9 @@ def version_finaled(sg, logger, event, args):
                         version_date_or_timestamp
                         and not other_version[args["version_date_field"]]
                     ):
-                        update_dict[
-                            args["version_date_field"]
-                        ] = version_date_or_timestamp
+                        update_dict[args["version_date_field"]] = (
+                            version_date_or_timestamp
+                        )
                     batch_data.append(
                         {
                             "request_type": "update",
@@ -268,7 +268,10 @@ def get_date_or_timestamp(logger, sg, event, entity_type, date_field, timezone):
 
     # Determine the date field type of date_field.
     if date_field and timezone:
-        date_field_type = sg.schema_field_read(entity_type, date_field,)[date_field][
+        date_field_type = sg.schema_field_read(
+            entity_type,
+            date_field,
+        )[date_field][
             "data_type"
         ]["value"]
 
