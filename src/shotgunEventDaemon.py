@@ -61,6 +61,8 @@ Line: %(lineno)d
 
 %(message)s"""
 
+CONFIG_ENV_VAR = "EVENT_DAEMON_CONFIG_FILE"
+
 
 def _setFilePathOnLogger(logger, path):
     # Remove any previous handler.
@@ -1357,6 +1359,17 @@ def _getConfigPath():
 
         # Add the script's directory to the paths we'll search for the config.
         paths[:0] = [os.path.dirname(scriptPath)]
+
+    if CONFIG_ENV_VAR in os.environ:
+        path = os.environ[CONFIG_ENV_VAR]
+        if os.path.exists(path):
+            return path
+
+        raise EventDaemonError(
+            "Environment Variable: '%s' is defined but the value: '%s' doesn't exist.",
+            CONFIG_ENV_VAR,
+            path,
+        )
 
     # Search for a config file.
     for path in paths:
