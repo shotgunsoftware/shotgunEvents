@@ -37,6 +37,7 @@ import time
 import traceback
 import configparser
 import pickle
+import ssl
 
 if sys.platform == "win32":
     import win32serviceutil
@@ -66,12 +67,8 @@ def _setFilePathOnLogger(logger, path):
     _removeHandlersFromLogger(logger, logging.handlers.TimedRotatingFileHandler)
 
     # Add the file handler
-    handler = logging.handlers.TimedRotatingFileHandler(
-        path, "midnight", backupCount=10
-    )
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    )
+    handler = logging.handlers.TimedRotatingFileHandler(path, "midnight", backupCount=10)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     logger.addHandler(handler)
 
 
@@ -218,9 +215,7 @@ class Config(configparser.ConfigParser):
             if not os.path.exists(path):
                 os.makedirs(path)
             elif not os.path.isdir(path):
-                raise ConfigError(
-                    "The logPath value in the config should point to a directory."
-                )
+                raise ConfigError("The logPath value in the config should point to a directory.")
 
             path = os.path.join(path, filename)
 
@@ -230,10 +225,7 @@ class Config(configparser.ConfigParser):
         return path
 
     def getTimingLogFile(self):
-        if (
-            not self.has_option("daemon", "timing_log")
-            or self.get("daemon", "timing_log") != "on"
-        ):
+        if not self.has_option("daemon", "timing_log") or self.get("daemon", "timing_log") != "on":
             return None
 
         return self.getLogFile() + ".timing"
@@ -253,9 +245,7 @@ class Engine(object):
         self.config = Config(configPath)
 
         # Get config values
-        self._pluginCollections = [
-            PluginCollection(self, s) for s in self.config.getPluginPaths()
-        ]
+        self._pluginCollections = [PluginCollection(self, s) for s in self.config.getPluginPaths()]
         self._sg = sg.Shotgun(
             self.config.getShotgunURL(),
             self.config.getEngineScriptName(),
@@ -429,16 +419,12 @@ class Engine(object):
                         # The _loadEventIdData got an old-style id file containing a single
                         # int which is the last id properly processed.
                         lastEventId = int(line)
-                        self.log.debug(
-                            "Read last event id (%d) from file.", lastEventId
-                        )
+                        self.log.debug("Read last event id (%d) from file.", lastEventId)
                         for collection in self._pluginCollections:
                             collection.setState(lastEventId)
                 fh.close()
             except OSError as err:
-                raise EventDaemonError(
-                    "Could not load event id from file.\n\n%s" % traceback.format_exc()
-                )
+                raise EventDaemonError("Could not load event id from file.\n\n%s" % traceback.format_exc())
         else:
             # No id file?
             # Get the event data from the database.
@@ -455,9 +441,7 @@ class Engine(object):
         while lastEventId is None:
             order = [{"column": "id", "direction": "desc"}]
             try:
-                result = self._sg.find_one(
-                    "EventLogEntry", filters=[], fields=["id"], order=order
-                )
+                result = self._sg.find_one("EventLogEntry", filters=[], fields=["id"], order=order)
             except (sg.ProtocolError, sg.ResponseError, socket.error) as err:
                 conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
             except Exception as err:
@@ -525,9 +509,7 @@ class Engine(object):
         @rtype: I{list} of Flow Production Tracking event dictionaries.
         """
         nextEventId = None
-        for newId in [
-            coll.getNextUnprocessedEventId() for coll in self._pluginCollections
-        ]:
+        for newId in [coll.getNextUnprocessedEventId() for coll in self._pluginCollections]:
             if newId is not None and (nextEventId is None or newId < nextEventId):
                 nextEventId = newId
 
@@ -565,9 +547,7 @@ class Engine(object):
                         )
                     return events
                 except (sg.ProtocolError, sg.ResponseError, socket.error) as err:
-                    conn_attempts = self._checkConnectionAttempts(
-                        conn_attempts, str(err)
-                    )
+                    conn_attempts = self._checkConnectionAttempts(conn_attempts, str(err))
                 except Exception as err:
                     msg = "Unknown error: %s" % str(err)
                     conn_attempts = self._checkConnectionAttempts(conn_attempts, msg)
@@ -591,9 +571,7 @@ class Engine(object):
                 if state:
                     try:
                         with open(eventIdFile, "wb") as fh:
-                            pickle.dump(
-                                self._eventIdData, fh, protocol=pickle.HIGHEST_PROTOCOL
-                            )
+                            pickle.dump(self._eventIdData, fh, protocol=pickle.HIGHEST_PROTOCOL)
                     except OSError as err:
                         self.log.error(
                             "Can not write event id data to %s.\n\n%s",
@@ -693,9 +671,7 @@ class PluginCollection(object):
             if basename in self._plugins:
                 newPlugins[basename] = self._plugins[basename]
             else:
-                newPlugins[basename] = Plugin(
-                    self._engine, os.path.join(self.path, basename)
-                )
+                newPlugins[basename] = Plugin(self._engine, os.path.join(self.path, basename))
 
             newPlugins[basename].load()
 
@@ -740,9 +716,7 @@ class Plugin(object):
         self._engine.setEmailsOnLogger(self.logger, True)
         self.logger.setLevel(self._engine.config.getLogLevel())
         if self._engine.config.getLogMode() == 1:
-            _setFilePathOnLogger(
-                self.logger, self._engine.config.getLogFile("plugin." + self.getName())
-            )
+            _setFilePathOnLogger(self.logger, self._engine.config.getLogFile("plugin." + self.getName()))
 
     def getName(self):
         return self._pluginName
@@ -917,20 +891,14 @@ class Plugin(object):
         return self._active
 
     def _updateLastEventId(self, event):
-        BACKLOG_TIMEOUT = (
-            5  # time in minutes after which we consider a pending event won't happen
-        )
+        BACKLOG_TIMEOUT = 5  # time in minutes after which we consider a pending event won't happen
         if self._lastEventId is not None and event["id"] > self._lastEventId + 1:
             event_date = event["created_at"].replace(tzinfo=None)
-            if datetime.datetime.now() > (
-                event_date + datetime.timedelta(minutes=BACKLOG_TIMEOUT)
-            ):
+            if datetime.datetime.now() > (event_date + datetime.timedelta(minutes=BACKLOG_TIMEOUT)):
                 # the event we've just processed happened more than BACKLOG_TIMEOUT minutes ago so any event
                 # with a lower id should have shown up in the EventLog by now if it actually happened
                 if event["id"] == self._lastEventId + 2:
-                    self.logger.info(
-                        "Event %d never happened - ignoring.", self._lastEventId + 1
-                    )
+                    self.logger.info("Event %d never happened - ignoring.", self._lastEventId + 1)
                 else:
                     self.logger.info(
                         "Events %d-%d never happened - ignoring.",
@@ -941,9 +909,7 @@ class Plugin(object):
                 # in this case, we want to add the missing events to the backlog as they could show up in the
                 # EventLog within BACKLOG_TIMEOUT minutes, during which we'll keep asking for the same range
                 # them to show up until they expire
-                expiration = datetime.datetime.now() + datetime.timedelta(
-                    minutes=BACKLOG_TIMEOUT
-                )
+                expiration = datetime.datetime.now() + datetime.timedelta(minutes=BACKLOG_TIMEOUT)
                 for skippedId in range(self._lastEventId + 1, event["id"]):
                     self.logger.info("Adding event id %d to backlog.", skippedId)
                     self._backlog[skippedId] = expiration
@@ -990,9 +956,7 @@ class Registrar(object):
     def __getattr__(self, name):
         if name in self._allowed:
             return getattr(self._plugin, name)
-        raise AttributeError(
-            "type object '%s' has no attribute '%s'" % (type(self).__name__, name)
-        )
+        raise AttributeError("type object '%s' has no attribute '%s'" % (type(self).__name__, name))
 
 
 class Callback(object):
@@ -1107,9 +1071,7 @@ class Callback(object):
                 tb = tb.tb_next
 
             msg = "An error occured processing an event.\n\n%s\n\nLocal variables at outer most frame in plugin:\n\n%s"
-            self._logger.critical(
-                msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals)
-            )
+            self._logger.critical(msg, traceback.format_exc(), pprint.pformat(stack[1].f_locals))
             if self._stopOnError:
                 self._active = False
 
@@ -1176,9 +1138,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
         logging.CRITICAL: "CRITICAL - SG event daemon.",
     }
 
-    def __init__(
-        self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None
-    ):
+    def __init__(self, smtpServer, fromAddr, toAddrs, emailSubject, credentials=None, secure=None):
         args = [smtpServer, fromAddr, toAddrs, emailSubject, credentials]
         if credentials:
             args.append(secure)
@@ -1218,7 +1178,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
             if self.username:
                 if self.secure is not None:
                     smtp.ehlo()
-                    smtp.starttls(*self.secure)
+                    smtp.starttls(context=ssl.create_default_context())
                     smtp.ehlo()
                 smtp.login(self.username, self.password)
             smtp.sendmail(self.fromaddr, self.toaddrs, msg)
@@ -1299,9 +1259,7 @@ class LinuxDaemon(daemonizer.Daemon):
         if not daemonize:
             # Setup the stdout logger
             handler = logging.StreamHandler()
-            handler.setFormatter(
-                logging.Formatter("%(levelname)s:%(name)s:%(message)s")
-            )
+            handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
             logging.getLogger().addHandler(handler)
 
         super().start(daemonize)
