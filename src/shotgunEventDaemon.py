@@ -37,6 +37,7 @@ import time
 import traceback
 import configparser
 import pickle
+import ssl
 
 if sys.platform == "win32":
     import win32serviceutil
@@ -1218,7 +1219,7 @@ class CustomSMTPHandler(logging.handlers.SMTPHandler):
             if self.username:
                 if self.secure is not None:
                     smtp.ehlo()
-                    smtp.starttls(*self.secure)
+                    smtp.starttls(context=ssl.create_default_context())
                     smtp.ehlo()
                 smtp.login(self.username, self.password)
             smtp.sendmail(self.fromaddr, self.toaddrs, msg)
