@@ -26,6 +26,7 @@ http://shotgunsoftware.github.com/shotgunEvents
 __version__ = "1.0"
 __version_info__ = (1, 0)
 
+import concurrent.futures
 import datetime
 import logging
 import logging.handlers
@@ -158,6 +159,17 @@ class Config(configparser.ConfigParser):
 
     def getPluginPaths(self):
         return [s.strip() for s in self.get("plugins", "paths").split(",")]
+
+    def getPluginMaxWorkers(self):
+        """
+        Maximum number of plugins that can be processed simultaneously (in
+        separate threads) for a single collection. If not set, defaults to
+        one worker thread per loaded plugin so that every plugin always runs
+        concurrently with the others.
+        """
+        if self.has_option("plugins", "max_workers"):
+            return self.getint("plugins", "max_workers")
+        return None
 
     def getSMTPEnabled(self):
         return self.getboolean("emails", "enabled")
@@ -516,6 +528,8 @@ class Engine(object):
 
     def stop(self):
         self._continue = False
+        for collection in self._pluginCollections:
+            collection.shutdown()
 
     def _getNewEvents(self):
         """
@@ -639,6 +653,13 @@ class PluginCollection(object):
         self._plugins = {}
         self._stateData = {}
 
+        # Thread pool used to process plugins concurrently. It is (re)built
+        # in load() so that its size always matches the number of loaded
+        # plugins unless the user has pinned a max_workers value in the
+        # config.
+        self._maxWorkers = self._engine.config.getPluginMaxWorkers()
+        self._executor = None
+
     def setState(self, state):
         if isinstance(state, int):
             for plugin in self:
@@ -668,11 +689,89 @@ class PluginCollection(object):
         return eId
 
     def process(self, event):
+        """
+        Dispatch C{event} to every active plugin in this collection.
+
+        Each plugin is run in its own worker thread so that a plugin which
+        crashes or takes a long time to complete cannot affect the main
+        thread or delay/block any other plugin. This call still blocks until
+        every plugin has finished processing the event (or crashed) before
+        returning, so event ordering and state persistence (see
+        L{Engine._saveEventIdData}) are preserved exactly like before.
+        """
+        activePlugins = []
         for plugin in self:
             if plugin.isActive():
-                plugin.process(event)
+                activePlugins.append(plugin)
             else:
                 plugin.logger.debug("Skipping: inactive.")
+
+        if not activePlugins:
+            return
+
+        executor = self._getExecutor()
+
+        futures = {
+            executor.submit(self._processPlugin, plugin, event): plugin
+            for plugin in activePlugins
+        }
+
+        # Wait for every plugin to finish (successfully or not) before
+        # returning. Each plugin runs independently of the others, so one
+        # plugin crashing or running long does not hold up or take down its
+        # siblings - it only delays how long this call takes to return.
+        for future in concurrent.futures.as_completed(futures):
+            plugin = futures[future]
+            try:
+                future.result()
+            except Exception:
+                # This should be rare: Plugin.process()/Plugin._process()
+                # already contain their own error handling and deactivate
+                # themselves on failure. This is a last resort safety net so
+                # that a truly unexpected crash in a plugin thread can never
+                # propagate to (or kill) the main thread.
+                plugin.logger.critical(
+                    "Unhandled exception while processing event %d in "
+                    "plugin %s. The plugin has been deactivated.\n\n%s",
+                    event["id"],
+                    plugin.getName(),
+                    traceback.format_exc(),
+                )
+                plugin.deactivate()
+
+    @staticmethod
+    def _processPlugin(plugin, event):
+        """
+        Entry point run inside a worker thread for a single plugin.
+        """
+        plugin.process(event)
+
+    def _getExecutor(self):
+        """
+        Lazily create the thread pool executor used to process plugins
+        concurrently. Recreated in L{load} whenever the set of plugins
+        changes so its size always tracks the number of loaded plugins
+        (unless a fixed size was configured).
+        """
+        if self._executor is None:
+            self._executor = self._buildExecutor()
+        return self._executor
+
+    def _buildExecutor(self):
+        workerCount = self._maxWorkers or max(1, len(self._plugins))
+        return concurrent.futures.ThreadPoolExecutor(
+            max_workers=workerCount,
+            thread_name_prefix="Plugin-%s" % os.path.basename(self.path.rstrip(os.sep)),
+        )
+
+    def shutdown(self):
+        """
+        Stop accepting new work and wait for any in-flight plugin threads to
+        finish. Should be called when the engine is shutting down.
+        """
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+            self._executor = None
 
     def load(self):
         """
@@ -699,7 +798,17 @@ class PluginCollection(object):
 
             newPlugins[basename].load()
 
+        pluginCountChanged = len(newPlugins) != len(self._plugins)
         self._plugins = newPlugins
+
+        # Rebuild the thread pool if the number of plugins changed (and we
+        # aren't pinned to a fixed worker count) so every plugin always gets
+        # its own thread to run concurrently in.
+        if self._executor is not None and (
+            pluginCountChanged and self._maxWorkers is None
+        ):
+            self._executor.shutdown(wait=True)
+            self._executor = self._buildExecutor()
 
     def __iter__(self):
         for basename in sorted(self._plugins.keys()):
@@ -783,6 +892,13 @@ class Plugin(object):
         @rtype: I{bool}
         """
         return self._active
+
+    def deactivate(self):
+        """
+        Mark this plugin as inactive so its callbacks are skipped on
+        subsequent events.
+        """
+        self._active = False
 
     def setEmails(self, *emails):
         """
