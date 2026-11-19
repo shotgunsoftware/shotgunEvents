@@ -14,7 +14,8 @@ resources:
     - repository: templates
       type: github
       name: shotgunsoftware/tk-ci-tools
-      ref: refs/heads/master
+      # Testing the tk-ci-tools branch, revert to master before merging.
+      ref: refs/heads/ticket/SG-47353-test-matrix-latest-images
       endpoint: shotgunsoftware
 
 # We want builds to trigger for 3 reasons:
@@ -37,4 +38,9 @@ pr:
 jobs:
 - template: build-pipeline.yml@templates
   parameters:
+    # Run the tests with the shared tk-ci-tools test jobs. They come with a lot
+    # of default behavior (Python versions, Qt wrappers, operating systems and
+    # runner images), defined in internal/run-tests.yml of tk-ci-tools. Review
+    # those defaults when they change, and override them with
+    # run_tests_extra_parameters if this repository needs something else.
     has_unit_tests: true
