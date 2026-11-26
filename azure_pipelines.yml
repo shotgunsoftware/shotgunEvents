@@ -37,4 +37,13 @@ pr:
 jobs:
 - template: build-pipeline.yml@templates
   parameters:
+    # Run the tests with the shared tk-ci-tools test jobs. They come with a lot
+    # of default behavior (Python versions, Qt wrappers, operating systems and
+    # runner images), defined in internal/run-tests.yml of tk-ci-tools. Review
+    # those defaults when they change, and override them with
+    # run_tests_parameters if this repository needs something else.
     has_unit_tests: true
+
+    run_tests_parameters:
+      # Not a Toolkit component: no Qt wrapper, tk-toolchain or tk-core.
+      toolkit: false
